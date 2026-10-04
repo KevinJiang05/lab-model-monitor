@@ -145,7 +145,7 @@ class ControlService:
                 previous_file = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else None
                 # Private rollback stays in memory and never leaves this owner.
                 previous_credentials = json.loads(credential_path.read_text(encoding="utf-8")) if credential_path.exists() else None
-                schedule_changed = any(settings["schedule"][key] != previous["schedule"][key] for key in ("enabled", "daily_time"))
+                schedule_changed = any(settings["schedule"][key] != previous["schedule"][key] for key in ("enabled", "daily_time", "daily_times"))
                 status = self.schedule_status(refresh=True)
                 reconcile = (settings["schedule"]["enabled"] and status["state"] in {"not_installed", "Disabled"}
                              or not settings["schedule"]["enabled"] and status["state"] in {"Ready", "Running"})

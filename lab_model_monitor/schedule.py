@@ -16,6 +16,7 @@ WINDOWS_AI_REASONING_TASK_NAME = "LabModelMonitor-Daily"
 class AIReasoningSchedule:
     enabled: bool = False
     daily_time: str = "16:00"
+    daily_times: tuple[str, ...] = ()
     models: tuple[str, ...] = ("gpt-6-astra", "gpt-6.1-sol")
     attempts_per_model: int = 3
     reasoning_effort: str = "medium"
@@ -27,6 +28,9 @@ class AIReasoningSchedule:
             raise ValueError("AI monitor enabled must be a boolean.")
         if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", self.daily_time):
             raise ValueError("AI monitor time must use HH:MM format.")
+        if (len(self.daily_times) > 8 or len(set(self.daily_times)) != len(self.daily_times)
+                or any(not isinstance(t, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", t) for t in self.daily_times)):
+            raise ValueError("Schedule times must be unique HH:MM values (at most 8).")
         if (
             not self.models
             or len(self.models) > 10
@@ -61,7 +65,11 @@ class AIReasoningSchedule:
         models = values.get("models", cls.models)
         if not isinstance(models, (list, tuple)):
             raise ValueError("AI monitor models must be a list.")
+        times = values.get("daily_times", [])
+        if not isinstance(times, (list, tuple)):
+            raise ValueError("Schedule times must be a list.")
         return cls(
+            daily_times=tuple(times),
             enabled=values.get("enabled", False),
             daily_time=str(values.get("daily_time", "16:00")),
             models=tuple(models),
@@ -71,8 +79,13 @@ class AIReasoningSchedule:
             max_output_tokens=values.get("max_output_tokens", 32768),
         )
 
+    @property
+    def times(self) -> tuple[str, ...]:
+        return tuple(sorted(self.daily_times)) or (self.daily_time,)
+
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
+        result["daily_times"] = list(self.daily_times)
         result["models"] = list(self.models)
         return result
 

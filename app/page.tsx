@@ -37,7 +37,7 @@ export default function Home() {
   return <div className="monitor-page">
     <div className="monitor-workspace"><TestHeader active="candy" />
       <main><div className="heading test-heading"><div><h1>糖果测试</h1><p>回答正确率、接口状态与历史记录</p></div><button className="refresh" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : ""}/>刷新结果</button></div>
-        <div className="statusline"><span className={`signal ${state}`}><span className="dot"/>{state === "fresh" ? "已收到最近测试" : state === "stale" ? "等待更新 · 数据可能过期" : state === "paused" ? "定时检测已暂停" : "等待首次同步"}</span><span><Clock3 size={15}/>{data?.schedule.enabled === false ? "检测已暂停" : `每日 ${data?.schedule.daily_time || "16:00"}`} · UTC+8</span><span>最近测试 {formatTime(latest?.ended_at || latest?.created_at || null)}</span></div>
+        <div className="statusline"><span className={`signal ${state}`}><span className="dot"/>{state === "fresh" ? "已收到最近测试" : state === "stale" ? "等待更新 · 数据可能过期" : state === "paused" ? "定时检测已暂停" : "等待首次同步"}</span><span><Clock3 size={15}/>{data?.schedule.enabled === false ? "检测已暂停" : `每日 ${(data?.schedule.daily_times?.length ? data.schedule.daily_times.join(" / ") : data?.schedule.daily_time) || "15:00 / 20:00"}`} · UTC+8</span><span>最近测试 {formatTime(latest?.ended_at || latest?.created_at || null)}</span></div>
         {error && <div className="notice" role="alert"><AlertTriangle size={18}/>{error}{data && " 当前显示上次读取的数据。"}</div>}
         {!data && <div className="empty" role="status"><Activity size={28}/><h2>{loading ? "正在读取监测结果" : error ? "结果暂时不可用" : "尚未收到检测结果"}</h2><p>{loading ? "稍等片刻。" : "同步成功后，这里会展示真实的模型回答与历史记录。"}</p></div>}
         {data && <>

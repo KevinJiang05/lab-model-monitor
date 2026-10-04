@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC, datetime
 
 from .config import configuration_readiness, credential_status, load_credentials, load_settings
 from .delivery import deliver
@@ -36,8 +37,14 @@ def main() -> int:
                 if args.command == "sync":
                     result = deliver(store=store, settings=settings, credentials=credentials)
                 else:
+                    slot_time = datetime.now(UTC)
                     result = run_monitor(settings=settings, store=store, credentials=credentials,
-                                         scheduled=args.command == "scheduled-run", animation_test=args.command == "animation")
+                                         now=slot_time, scheduled=args.command == "scheduled-run", animation_test=args.command == "animation")
+                    if args.command == "scheduled-run" and result["status"] not in {"disabled", "not_due"}:
+                        animation_result = run_monitor(settings=settings, store=store, credentials=credentials,
+                                                       scheduled=True, animation_test=True, now=slot_time)
+                        result["animation"] = animation_result
+                        result["success"] = result["success"] and animation_result["success"]
                     if args.command != "animation" and result["status"] not in {"disabled", "not_due"}:
                         result["delivery"] = deliver(store=store, settings=settings, credentials=credentials,
                                                       run_id=result.get("run_id"))

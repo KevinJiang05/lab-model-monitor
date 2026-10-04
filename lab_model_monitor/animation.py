@@ -33,7 +33,7 @@ def projection(run: dict[str, Any]) -> dict[str, Any]:
         html = extract_html(sample["response_text"]) if sample["status"] == "generated" else None
         samples.append({
             **{key: sample.get(key) for key in ("requested_model", "returned_model", "status",
-                "elapsed_seconds", "input_tokens", "output_tokens", "total_tokens", "completion_status")},
+                "requested_at", "attempt", "elapsed_seconds", "input_tokens", "output_tokens", "total_tokens", "completion_status")},
             "html": html,
             "sha256": hashlib.sha256(html.encode("utf-8")).hexdigest() if html else None,
             "http_status": next(iter(re.findall(r"HTTP(?:Error)?\s*[: ]?\s*([45]\d\d)\b", str(sample.get("error") or ""), re.I)), None),
@@ -43,3 +43,25 @@ def projection(run: dict[str, Any]) -> dict[str, Any]:
             "reasoning_effort": run["contract"]["reasoning_effort"],
             "stream": run["contract"].get("stream", False),
             "max_output_tokens": run["contract"]["max_output_tokens"], "samples": samples}
+
+
+def site_snapshot(store, now=None):
+    """Newest animation evidence, bounded to 12 runs / 900 KB for one D1 row."""
+    import json
+    from datetime import UTC, datetime
+    timestamp = now or datetime.now(UTC)
+    payload = {"kind": "animation", "schema_version": 1,
+               "synced_at": timestamp.isoformat(), "runs": []}
+    for run in store.recent(prompt_version=VERSION, limit=12, now=timestamp):
+        if run["status"] == "running":
+            continue
+        item = projection(run)
+        # Keep failed attempts as evidence, including oversized artifacts as metadata.
+        for sample in item["samples"]:
+            if sample["html"] and len(sample["html"].encode("utf-8")) > 120_000:
+                sample["html"] = None
+        payload["runs"].append(item)
+        if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > 900_000:
+            payload["runs"].pop()
+            break
+    return payload

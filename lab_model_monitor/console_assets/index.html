@@ -38,7 +38,7 @@
         <section class="card">
           <div class="card-heading"><h1>计划与模型</h1><label class="toggle"><input id="enabled" type="checkbox">每日自动检测</label></div>
           <div class="fields three">
-            <label>运行时间 <span class="hint">UTC+8</span><input id="daily-time" type="time" required></label>
+            <label>运行时间 <span class="hint">北京时间，逗号分隔</span><input id="daily-time" type="text" placeholder="15:00, 20:00" required></label>
             <label>每个模型采样次数<input id="attempts" type="number" min="1" max="5" required></label>
             <div class="field-help">定时运行需要电脑开机且用户已登录。暂停后仍可手动检测。</div>
           </div>

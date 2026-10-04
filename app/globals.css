@@ -10,3 +10,23 @@
 .test-brand{font-size:17px;font-weight:650;color:var(--ink);text-decoration:none;white-space:nowrap}.test-header nav{display:flex;align-self:stretch;gap:8px}.test-header nav a{display:flex;align-items:center;justify-content:center;padding:0 18px;border-bottom:3px solid transparent;color:#617482;text-decoration:none;font-size:14px;font-weight:550}.test-header nav a:hover{background:#f3f7f7;color:#0c756d}.test-header nav a[aria-current=page]{color:#0c756d;border-bottom-color:#13857a;background:#eff8f6}.test-access{margin-left:auto;font-size:12px;color:#74818d;white-space:nowrap}
 .monitor-workspace{width:100%;min-width:0}.monitor-workspace>main{max-width:1280px;padding:24px 32px;margin:auto}.test-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.test-heading h1{font-size:24px;margin:0;font-weight:650}.test-heading>span,.test-heading p{font-size:13px;color:#74818d;margin:4px 0 0}.test-heading .refresh{font-size:13px}
 @media(max-width:600px){.test-header{padding:12px 16px 0;gap:10px;flex-wrap:wrap}.test-brand{font-size:16px}.test-access{order:1}.test-header nav{order:2;width:100%;min-height:44px;gap:4px}.test-header nav a{flex:1;padding:8px 16px}.monitor-workspace>main{padding:18px 12px}.test-heading{gap:10px;flex-wrap:wrap}.test-heading h1{font-size:22px}}
+
+/* Compact candy dashboard: keep evidence readable without oversized score cards. */
+.monitor-workspace>main{padding-top:18px;font-size:13px}
+.monitor-workspace .test-heading{margin-bottom:12px}.monitor-workspace .test-heading h1{font-size:21px}
+.monitor-workspace .statusline{font-size:12px;gap:18px;margin-bottom:14px}
+.monitor-workspace .cards{gap:16px}.monitor-workspace .model-card{padding:14px 18px 0;border-radius:8px}
+.monitor-workspace .model-mark{width:30px;height:30px;font-size:18px;border-radius:6px}
+.monitor-workspace .card-top h2{font-size:16px}.monitor-workspace .score{padding:12px 0 10px}
+.monitor-workspace .score>span{font-size:12px}.monitor-workspace .score strong{font-size:34px;letter-spacing:-1px}
+.monitor-workspace .card-facts{padding:9px 0 11px}.monitor-workspace .card-facts>div>span{font-size:12px}.monitor-workspace .card-facts strong{font-size:18px}
+.monitor-workspace .sample-strip{padding:8px 18px;margin:0 -18px}.monitor-workspace .sample{width:20px;height:20px}
+.monitor-workspace .definition{font-size:12px;padding:8px 2px 12px}.monitor-workspace .panel{border-radius:8px;margin-bottom:14px}
+.monitor-workspace .section-top{padding:14px 18px 0}.monitor-workspace .section-top h2,.monitor-workspace .method h2{font-size:16px}
+.monitor-workspace .chart-controls{padding:12px 18px 8px}.monitor-workspace .chart{height:190px}
+.monitor-workspace .window-stats{margin:8px 18px 0;padding-top:10px}.monitor-workspace .chart-note{margin:8px 18px 12px}
+.monitor-workspace .history .section-top{margin-bottom:12px}.monitor-workspace .run>summary{padding:11px 18px;gap:14px}
+.monitor-workspace .run-date,.monitor-workspace .run-models b{font-size:13px}.monitor-workspace .run-body{padding:0 18px 14px}
+.monitor-workspace .answer{padding:11px;margin-top:8px}.monitor-workspace pre{font-size:13px;line-height:1.6}
+.monitor-workspace .method>summary{padding:13px 18px}.monitor-workspace .method-body{padding:0 18px 16px}
+.monitor-workspace .method-body p,.monitor-workspace .parameters{font-size:13px}.monitor-workspace .method pre{padding:14px}

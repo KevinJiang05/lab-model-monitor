@@ -16,6 +16,7 @@ export const snapshotSchema = z.object({
   schema_version: z.literal(1), synced_at: timestamp, timezone: z.literal("Asia/Taipei"),
   retention_days: z.literal(90), history_limited: z.boolean(),
   schedule: z.object({ enabled: z.boolean(), daily_time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+    daily_times: z.array(z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)).max(8).optional(),
     models: z.array(z.string().min(1).max(200)).min(1).max(10),
     attempts_per_model: z.number().int().min(1).max(5) }),
   method: z.object({ instructions: z.string().max(2000), prompt: z.string().max(10000) }),
@@ -60,9 +61,13 @@ export function formatTime(value: string | null) {
 export function freshness(snapshot: Snapshot, now: Date) {
   if (!snapshot.schedule.enabled) return "paused";
   const local = new Date(now.getTime() + 8*3600000);
-  const [hours, minutes] = snapshot.schedule.daily_time.split(":").map(Number);
-  const deadline = Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate(),hours-8,minutes);
-  const due = now.getTime() >= deadline + 30*60000 ? deadline : deadline - 86400000;
+  const times = snapshot.schedule.daily_times?.length ? snapshot.schedule.daily_times : [snapshot.schedule.daily_time];
+  const deadlines = times.flatMap(time => {
+    const [hours, minutes] = time.split(":").map(Number);
+    const today = Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate(),hours-8,minutes);
+    return [today - 86400000, today];
+  });
+  const due = Math.max(...deadlines.filter(d => now.getTime() >= d + 30*60000));
   const latest = snapshot.runs[0];
   return latest && Date.parse(latest.created_at) >= due ? "fresh" : "stale";
 }

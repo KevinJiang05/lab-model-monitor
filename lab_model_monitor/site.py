@@ -91,6 +91,7 @@ def build_reasoning_site_snapshot(
         "method": {"instructions": CANDY_INSTRUCTIONS, "prompt": CANDY_PROMPT},
         "runs": runs[:MAX_RUNS],
     }
+    payload["schedule"]["daily_times"] = schedule.get("daily_times", [])
     return payload
 
 
@@ -119,18 +120,22 @@ def sync_reasoning_site(
         snapshot = build_reasoning_site_snapshot(
             store=store or RunStore(), schedule=settings["schedule"]
         )
-        body = json.dumps(snapshot, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        if len(body) > MAX_BODY_BYTES:
-            return {"success": False, "status": "snapshot_too_large"}
-        request = Request(site_url + "/api/sync", data=body, method="POST", headers={
-            "Content-Type": "application/json", "User-Agent": "LabModelMonitor/0.1.0",
-            "Authorization": f"Bearer {token}", "OAI-Sites-Authorization": f"Bearer {token}",
-        })
-        with build_opener(_NoRedirect()).open(request, timeout=30) as response:
-            result = json.loads(response.read(8192).decode("utf-8"))
-        if not isinstance(result, dict) or result.get("success") is not True:
-            return {"success": False, "status": "invalid_site_response"}
-        return {"success": True, "status": "synced", "runs": len(snapshot["runs"])}
+        from .animation import site_snapshot
+        animation_snapshot = site_snapshot(store or RunStore())
+        for payload in (snapshot, animation_snapshot):
+            body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+            if len(body) > MAX_BODY_BYTES:
+                return {"success": False, "status": "snapshot_too_large"}
+            request = Request(site_url + "/api/sync", data=body, method="POST", headers={
+                "Content-Type": "application/json", "User-Agent": "LabModelMonitor/0.1.0",
+                "Authorization": f"Bearer {token}", "OAI-Sites-Authorization": f"Bearer {token}",
+            })
+            with build_opener(_NoRedirect()).open(request, timeout=30) as response:
+                result = json.loads(response.read(8192).decode("utf-8"))
+            if not isinstance(result, dict) or result.get("success") is not True:
+                return {"success": False, "status": "invalid_site_response"}
+        return {"success": True, "status": "synced", "runs": len(snapshot["runs"]),
+                "animation_runs": len(animation_snapshot["runs"])}
     except HTTPError as exc:
         return {"success": False, "status": "http_error", "http_status": exc.code}
     except (URLError, OSError, ValueError, KeyError, TypeError):

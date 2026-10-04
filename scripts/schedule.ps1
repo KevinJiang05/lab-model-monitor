@@ -29,10 +29,12 @@ WScript.Quit exitCode
 "@
     [IO.File]::WriteAllText($launcherPath, $vbs, [Text.Encoding]::Unicode)
     $taskAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\wscript.exe" -Argument "//B //Nologo `"$launcherPath`"" -WorkingDirectory $projectRoot
-    $trigger = New-ScheduledTaskTrigger -Daily -At $settings.schedule.daily_time
+    $times = @($settings.schedule.daily_times)
+    if (-not $times.Count) { $times = @($settings.schedule.daily_time) }
+    $trigger = @($times | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ })
     $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-    Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $taskSettings -Principal $principal -Description 'Independent daily laboratory relay candy-puzzle monitoring' -Force | Out-Null
+    Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $taskSettings -Principal $principal -Description 'Independent laboratory candy and animation monitoring' -Force | Out-Null
     if ($Staged -or -not $settings.schedule.enabled) { Disable-ScheduledTask -TaskName $taskName | Out-Null }
 } elseif ($Action -eq 'Remove') {
     if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false }
@@ -46,7 +48,7 @@ WScript.Quit exitCode
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 if ($task) {
     $info = Get-ScheduledTaskInfo -TaskName $taskName
-    [pscustomobject]@{ task_name = $taskName; state = [string]$task.State; next_run = $info.NextRunTime.ToString('s'); last_result = $info.LastTaskResult; hidden_launcher = $task.Actions.Arguments; working_directory = $task.Actions.WorkingDirectory } | ConvertTo-Json
+    [pscustomobject]@{ task_name = $taskName; state = [string]$task.State; triggers = @($task.Triggers | ForEach-Object { $_.StartBoundary }); next_run = $info.NextRunTime.ToString('s'); last_result = $info.LastTaskResult; hidden_launcher = $task.Actions.Arguments; working_directory = $task.Actions.WorkingDirectory } | ConvertTo-Json
 } else {
     [pscustomobject]@{ task_name = $taskName; state = 'not_installed' } | ConvertTo-Json
 }

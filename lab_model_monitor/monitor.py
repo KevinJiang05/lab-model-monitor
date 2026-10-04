@@ -140,14 +140,13 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
                 store: RunStore | None = None, requester: JsonRequester | None = None,
                 scheduled: bool = False, lock_path: Path | None = None,
                 now: datetime | None = None, animation_test: bool = False) -> dict[str, Any]:
-    if animation_test and scheduled:
-        raise ValueError("Animation tests are manual only")
     settings = settings or load_settings()
     schedule = AIReasoningSchedule.from_mapping(settings["schedule"])
     timestamp = (now or datetime.now(UTC)).astimezone(TAIPEI)
     if scheduled and not schedule.enabled:
         return {"success": True, "status": "disabled"}
-    if scheduled and timestamp.strftime("%H:%M") < schedule.daily_time:
+    due_times = [t for t in schedule.times if t <= timestamp.strftime("%H:%M")]
+    if scheduled and not due_times:
         return {"success": True, "status": "not_due"}
     credentials = credentials or load_credentials()
     if not credentials.get("api_key"):
@@ -158,6 +157,7 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
     if animation_test:
         test = {"instructions": animation.INSTRUCTIONS, "prompt": animation.PROMPT}
         contract.update(prompt_version=animation.VERSION, expected_answer=None,
+                        attempts_per_model=3 if scheduled else 1, stop_after_generated=True,
                         stream=settings["api"]["api_mode"] == "responses",
                         prompt_sha256=hashlib.sha256((animation.INSTRUCTIONS + "\n" + animation.PROMPT).encode()).hexdigest())
     with execution_lock(lock_path or STATE / "monitor.lock"):
@@ -171,7 +171,13 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
                 result = {"success": False, "contract": previous["contract"], "method": previous["result"].get("method"), "samples": previous["samples"],
                           "models": [], "notification_summary": "糖果检测进程中断；已完成样本保留，本轮未自动补测。"}
                 store.finish(previous["run_id"], result)
-        day = timestamp.date().isoformat() if scheduled else None
+        day = None
+        if scheduled:
+            date = timestamp.date().isoformat()
+            # Preserve legacy single-day candy keys; new slots separate test kinds.
+            day = f"{date}@{due_times[-1]}:{'animation' if animation_test else 'candy'}"
+            if not animation_test and not schedule.daily_times:
+                day = date
         if day and (previous := store.for_day(day)):
             return {"success": previous["status"] == "success", "status": "already_run", "run_id": previous["run_id"]}
         try:
@@ -180,8 +186,10 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
             return {"success": False, "status": "already_run"}
         samples: list[dict[str, Any]] = []
         try:
-            for attempt in range(1, (1 if animation_test else schedule.attempts_per_model) + 1):
+            for attempt in range(1, ((3 if scheduled else 1) if animation_test else schedule.attempts_per_model) + 1):
                 for model in schedule.models:
+                    if animation_test and any(s["requested_model"] == model and s["status"] == "generated" for s in samples):
+                        continue
                     started = perf_counter()
                     sample: dict[str, Any] = {
                         "requested_model": model, "attempt": attempt, "requested_at": datetime.now(UTC).isoformat(),
@@ -228,7 +236,7 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
                         sample.update(status="timeout" if isinstance(exc, TimeoutError) else "api_error", error=type(exc).__name__)
                     sample["elapsed_seconds"] = round(perf_counter() - started, 3)
                     store.save_samples(identity, samples)
-            result = {"success": all(sample["status"] == ("generated" if animation_test else "passed") for sample in samples),
+            result = {"success": (all(any(s["requested_model"] == model and s["status"] == "generated" for s in samples) for model in schedule.models) if animation_test else all(s["status"] == "passed" for s in samples)),
                       "contract": contract, "method": test, "samples": samples,
                       "models": ([{"model": sample["requested_model"], "status": sample["status"],
                                    "elapsed_seconds": sample["elapsed_seconds"]} for sample in samples]

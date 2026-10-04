@@ -60,7 +60,7 @@ function settings() {
   }
   return {
     api: {enabled: true, base_url: $("base-url").value.trim(), model: models[0], api_mode: $("api-mode").value, timeout_seconds: Number($("timeout").value)},
-    schedule: {enabled: $("enabled").checked, daily_time: $("daily-time").value, models, attempts_per_model: Number($("attempts").value), reasoning_effort: $("effort").value, timeout_seconds: Number($("timeout").value), max_output_tokens: Number($("tokens").value)},
+    schedule: {enabled: $("enabled").checked, daily_time: $("daily-time").value.split(/[,，\s]+/).filter(Boolean)[0], daily_times: $("daily-time").value.split(/[,，\s]+/).filter(Boolean), models, attempts_per_model: Number($("attempts").value), reasoning_effort: $("effort").value, timeout_seconds: Number($("timeout").value), max_output_tokens: Number($("tokens").value)},
     timezone: "Asia/Taipei", site_url: $("site-url").value.trim(), feishu_enabled: $("feishu-enabled").checked,
     test: {instructions: $("instructions").value.trim(), prompt: $("prompt").value.trim(), expected_answer: Number($("expected").value)},
   };
@@ -69,7 +69,7 @@ function settings() {
 function hydrate() {
   const s = state.settings;
   const values = {
-    "daily-time": s.schedule.daily_time, models: s.schedule.models.join("\n"), attempts: s.schedule.attempts_per_model,
+    "daily-time": (s.schedule.daily_times?.length ? s.schedule.daily_times : [s.schedule.daily_time]).join(", "), models: s.schedule.models.join("\n"), attempts: s.schedule.attempts_per_model,
     effort: s.schedule.reasoning_effort, timeout: s.schedule.timeout_seconds, tokens: s.schedule.max_output_tokens,
     "base-url": s.api.base_url, "api-mode": s.api.api_mode, "site-url": s.site_url,
     instructions: s.test.instructions, prompt: s.test.prompt, expected: s.test.expected_answer,
@@ -177,8 +177,8 @@ function renderLatest() {
 
 function render() {
   const s = state.settings, latest = state.runs[0], scheduler = state.scheduler;
-  $("daily-status").textContent = s.schedule.enabled ? s.schedule.daily_time : "已暂停";
-  $("daily-detail").textContent = "UTC+8 · 每模型 " + s.schedule.attempts_per_model + " 次";
+  $("daily-status").textContent = s.schedule.enabled ? (s.schedule.daily_times?.length ? s.schedule.daily_times : [s.schedule.daily_time]).join(" / ") : "已暂停";
+  $("daily-detail").textContent = "北京时间 · 糖果 " + s.schedule.attempts_per_model + " 次 · 动画成功 1 次（最多 3 次）";
   $("task-status").textContent = names[scheduler.state] || scheduler.state;
   $("next-run").textContent = scheduler.state === "Ready" && scheduler.next_run ? "下次 " + scheduler.next_run.replace("T", " ") : "LabModelMonitor-Daily";
   $("key-status").textContent = state.credentials.api_key.configured ? "已配置" : "待配置";

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { monitorDb, writeToken } from "@/db/monitor";
+import { animationSnapshotSchema } from "@/lib/animation-schema";
 import { snapshotSchema } from "@/lib/monitor";
 
 export async function POST(request: Request) {
@@ -24,7 +25,8 @@ export async function POST(request: Request) {
     let parsed: unknown;
     try { parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
     catch { return Response.json({ success: false, error: "invalid_json" }, { status: 400 }); }
-    const validated = snapshotSchema.safeParse(parsed);
+    const isAnimation = !!parsed && typeof parsed === "object" && "kind" in parsed && parsed.kind === "animation";
+    const validated = isAnimation ? animationSnapshotSchema.safeParse(parsed) : snapshotSchema.safeParse(parsed);
     if (!validated.success) return Response.json({ success: false, error: "invalid_snapshot" }, { status: 400 });
     const snapshot = validated.data;
     const stamp = Date.parse(snapshot.synced_at);
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
     snapshot.runs.sort((a,b) => Date.parse(b.created_at) - Date.parse(a.created_at));
     const result = await monitorDb().prepare(`INSERT INTO monitor_snapshots (id, payload, generated_at) VALUES (?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, generated_at = excluded.generated_at
-      WHERE excluded.generated_at >= monitor_snapshots.generated_at`).bind("main", JSON.stringify(snapshot), stamp).run();
+      WHERE excluded.generated_at >= monitor_snapshots.generated_at`).bind(isAnimation ? "animation" : "main", JSON.stringify(snapshot), stamp).run();
     if (!result.meta.changes) return Response.json({ success: false, error: "older_snapshot" }, { status: 409 });
     return Response.json({ success: true, runs: snapshot.runs.length });
   } catch {

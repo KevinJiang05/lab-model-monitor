@@ -1,7 +1,7 @@
 # 实验室模型监测
 
 独立项目：`D:\Develop\MyApp\lab-model-monitor`。
-每天台北时间 16:00 检测 `gpt-6-astra` 和 `gpt-6.1-sol`，各独立请求三次，飞书发送日报，Sites 看板展示结果。Python 后端只使用标准库，网站沿用原来的 Sites 项目和 D1 展示数据。
+每天北京时间 15:00、20:00 检测 `gpt-6-astra` 和 `gpt-6.1-sol`。每个时段糖果测试各独立请求三次；动画每模型成功生成一次即停止，失败最多尝试三次。飞书沿用糖果摘要，Sites 自动同步两类结果。Python 后端只使用标准库，网站沿用原来的 Sites 项目和 D1 展示数据。
 
 ## 本机使用
 
@@ -32,7 +32,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action Enable
 ```
 
-计划任务名为 `LabModelMonitor-Daily`，使用本项目 `.venv` 和隐藏启动器。需要此 Windows 用户登录；机器关机或休眠时无法按时检测，恢复后 Windows 可补启动。同一当地日期只执行一次定时检测；中断保留已完成样本，不自动补测。本地日志保存在 `runtime/logs/`。启用前必须配置模型及已启用汇报渠道的凭据。暂停后仍可手动检测。暂停或改时间后，如需立即更新云端计划展示，点击“同步结果”。
+计划任务名为 `LabModelMonitor-Daily`，使用本项目 `.venv` 和隐藏启动器。需要此 Windows 用户登录；机器关机或休眠时无法按时检测，恢复后 Windows 可补启动。按北京时间日期、时段、测试类型去重；同一时段重复启动不补测已执行的测试。错过时段后只执行当天最近一个已到时间段，不连跑积压轮次。两项测试串行运行，糖果失败不阻断动画。中断保留已完成样本，不自动补测。本地日志保存在 `runtime/logs/`。启用前必须配置模型及已启用汇报渠道的凭据。暂停后仍可手动检测。暂停或改时间后，如需立即更新云端计划展示，点击“同步结果”。
 
 ## 数据和判分
 
@@ -43,19 +43,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action
 - `runtime/monitor.sqlite3` 是原始结果的唯一活动 owner，保留完整回答、用量与执行合同。
 - 模型失败、超时、截断与答错分别记录；回答正确率与接口可用率分别统计。
 - 比较窗口要求完整合同相同；端点参与合同哈希，但不上传网页。
-- Sites D1 只保存最近90天、最多120轮的展示副本，单次回答最多1600字符。
+- Sites D1 的糖果数据只保存最近90天、最多120轮的展示副本，单次回答最多1600字符。
 - 飞书只发送摘要。通知或 Site 上传失败不会改写检测判分；恢复同步不会补测模型。
 - 导入记录保留原始 ID、时间、合同和全部样本；原量化任务库只保留历史证据。
 
-## 手动动画测试
+## 动画测试
 
-`.venv\Scripts\python.exe -m lab_model_monitor animation` 使用同一个客户端、执行锁和 SQLite 记录，每个已配置模型调用一次。固定提示词为“创建一个 HTML，内容是 SVG 绘制一个绵羊驾驶潜艇的 2D 动画。”；单独的交付指令只要求返回完整 HTML。不会修改每日整数题计划，也不发送动画飞书日报。
+`.venv\Scripts\python.exe -m lab_model_monitor animation` 使用同一个客户端、执行锁和 SQLite 记录，每个已配置模型调用一次。固定提示词为“创建一个 HTML，内容是 SVG 绘制一个绵羊驾驶潜艇的 2D 动画。”；单独的交付指令只要求返回完整 HTML。手动命令仍每模型仅一次；定时任务同时执行糖果和动画，动画每模型最多三次尝试，成功即停止，不发送单独的动画飞书日报。
 
 Responses 模式下的动画和整数题均默认使用流式请求，Chat Completions 保留非流式兼容路径。收到文本后每秒最多写入一次 SQLite，完成事件强制保存；运行中可查看已接收字符数。网络等待超时约束单次网络等待，不是整个生成任务的总时限。完成事件到达立即结束读取，连接中断保留已收到文本；停止本地进程不保证上游取消或停止计费。`generated` 只表示收到含 SVG 的完整 HTML，不代表视觉质量通过；接口失败、截断、格式错误独立记录。导出时只去除外围 Markdown 围栏，不修补模型作品。
 
-`.venv\Scripts\python.exe scripts/export_animation.py <run_id> --site` 从既有数据库导出 HTML 到 `runtime/artifacts/<run_id>/`，并生成脱敏的 `lib/animation-results.json`。导出不会调用模型。此 JSON 是本次动画的 Site 发布快照，随网站版本托管；糖果历史仍使用 D1。发布后本机关机仍可浏览和下载动画，新动画需要再次导出并发布。
+`.venv\Scripts\python.exe scripts/export_animation.py <run_id> --site` 从既有数据库导出 HTML 到 `runtime/artifacts/<run_id>/`，并生成脱敏的 `lib/animation-results.json`。导出不会调用模型。此 JSON 仅作为未同步时的初始快照。定时任务和 `sync` 会从 SQLite 自动同步动画到现有 D1 的独立展示行，无需重新发布网站。动画展示最多最近 12 轮、总计 900 KB；超过 120 KB 的单个 HTML 只展示元数据，原文件仍保存在本地证据中。发布后本机关机仍可浏览和下载已同步动画。
 
-Site 的 `/animations` 提供模型切换、隔离预览、重播、源码和 HTML 下载。预览禁止外部资源与网络请求；下载保留模型原稿。网站沿用现有访问权限。
+Site 的 `/animations` 提供结果卡片、隔离预览、重播、源码和 HTML 下载。预览禁止外部资源与网络请求；下载保留模型原稿。网站沿用现有访问权限。
 
 ## 网站构建
 
