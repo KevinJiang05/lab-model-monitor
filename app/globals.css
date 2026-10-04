@@ -30,3 +30,5 @@
 .monitor-workspace .answer{padding:11px;margin-top:8px}.monitor-workspace pre{font-size:13px;line-height:1.6}
 .monitor-workspace .method>summary{padding:13px 18px}.monitor-workspace .method-body{padding:0 18px 16px}
 .monitor-workspace .method-body p,.monitor-workspace .parameters{font-size:13px}.monitor-workspace .method pre{padding:14px}
+
+.trend-tooltip{background:#fff;border:1px solid var(--line);border-radius:7px;padding:10px 12px;font-size:12px;box-shadow:0 3px 12px #182b3d12}.trend-tooltip p{margin:5px 0}.trend-tooltip span{font-size:11px}
