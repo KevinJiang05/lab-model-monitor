@@ -18,7 +18,7 @@ class AIReasoningSchedule:
     daily_time: str = "16:00"
     models: tuple[str, ...] = ("gpt-6-astra", "gpt-6.1-sol")
     attempts_per_model: int = 3
-    reasoning_effort: str = "high"
+    reasoning_effort: str = "medium"
     timeout_seconds: float = 300.0
     max_output_tokens: int = 32768
 
@@ -66,7 +66,7 @@ class AIReasoningSchedule:
             daily_time=str(values.get("daily_time", "16:00")),
             models=tuple(models),
             attempts_per_model=values.get("attempts_per_model", 3),
-            reasoning_effort=str(values.get("reasoning_effort", "high")),
+            reasoning_effort=str(values.get("reasoning_effort", "medium")),
             timeout_seconds=float(values.get("timeout_seconds", 300.0)),
             max_output_tokens=values.get("max_output_tokens", 32768),
         )

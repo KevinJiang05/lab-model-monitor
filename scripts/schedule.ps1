@@ -15,7 +15,7 @@ if ($Action -eq 'Install') {
     if ([int]([TimeZoneInfo]::Local.GetUtcOffset([datetime]::Now).TotalMinutes) -ne 480) { throw 'Windows clock must use UTC+8 for this daily schedule.' }
     if (-not $Staged) {
         $preflight = & $pythonPath -m lab_model_monitor status | ConvertFrom-Json
-        if ($LASTEXITCODE -ne 0 -or -not ($preflight.credentials.api -and $preflight.credentials.site -and $preflight.credentials.feishu)) { throw 'Required independent credentials are missing.' }
+        if ($LASTEXITCODE -ne 0 -or -not $preflight.ready) { throw 'Required independent credentials are missing.' }
     }
     $launcherDir = Join-Path $projectRoot 'runtime\scheduler'
     New-Item -ItemType Directory -Path $launcherDir -Force | Out-Null
@@ -33,15 +33,15 @@ WScript.Quit exitCode
     $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
     Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Settings $taskSettings -Principal $principal -Description 'Independent daily laboratory relay candy-puzzle monitoring' -Force | Out-Null
-    if ($Staged) { Disable-ScheduledTask -TaskName $taskName | Out-Null }
+    if ($Staged -or -not $settings.schedule.enabled) { Disable-ScheduledTask -TaskName $taskName | Out-Null }
 } elseif ($Action -eq 'Remove') {
     if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false }
 } elseif ($Action -eq 'Enable') {
     $preflight = & (Join-Path $projectRoot '.venv\Scripts\python.exe') -m lab_model_monitor status | ConvertFrom-Json
-    if (-not ($preflight.success -and $preflight.credentials.api -and $preflight.credentials.site -and $preflight.credentials.feishu)) { throw 'Required independent credentials are missing.' }
+    if (-not ($preflight.success -and $preflight.ready)) { throw 'Required independent credentials are missing.' }
     Enable-ScheduledTask -TaskName $taskName | Out-Null
 } elseif ($Action -eq 'Disable') {
-    Disable-ScheduledTask -TaskName $taskName | Out-Null
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { Disable-ScheduledTask -TaskName $taskName | Out-Null }
 }
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 if ($task) {

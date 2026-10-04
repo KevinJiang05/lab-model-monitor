@@ -33,9 +33,11 @@ def send_feishu(run: dict[str, Any], credentials: dict[str, str], *, site_url: s
         if auth.get("code") != 0 or not auth.get("tenant_access_token"):
             return {"success": False, "status": "feishu_auth_failed", "code": auth.get("code")}
         summary = str(run["result"].get("notification_summary") or "检测结果暂不可用。")
-        if site_url:
+        canonical = run["result"].get("contract", {}).get("prompt_version", "candy-shape-selection-v1") == "candy-shape-selection-v1"
+        if site_url and canonical:
             summary += "\n\n[查看详细结果](" + site_url + ")"
-        card = {"config": {"wide_screen_mode": True}, "header": {"title": {"tag": "plain_text", "content": "实验室模型监测 · 糖果测试"},
+        title = "实验室模型监测 · 糖果测试" if canonical else "实验室模型监测 · 自定义测试"
+        card = {"config": {"wide_screen_mode": True}, "header": {"title": {"tag": "plain_text", "content": title},
                 "template": "green" if run["status"] == "success" else "orange"},
                 "elements": [{"tag": "markdown", "content": summary}]}
         result = requester("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id", {

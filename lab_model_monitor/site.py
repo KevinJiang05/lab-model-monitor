@@ -12,14 +12,14 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .store import RunStore
-from .config import load_settings, load_credentials
+from .config import default_test, load_settings, load_credentials, validate_test
 
 MAX_RUNS = 120
 MAX_BODY_BYTES = 16 * 1024 * 1024
 SAMPLE_STATUSES = {"passed", "wrong_answer", "format_error", "timeout", "api_error", "incomplete"}
 PUBLIC_CONTRACT_FIELDS = (
     "prompt_version", "prompt_sha256", "expected_answer", "api_mode", "reasoning_effort",
-    "max_output_tokens", "timeout_seconds", "web_search", "stream_failure_retry",
+    "max_output_tokens", "timeout_seconds", "web_search", "stream_failure_retry", "stream",
 )
 
 
@@ -39,16 +39,20 @@ def build_reasoning_site_snapshot(
     *, store: RunStore, schedule: dict[str, Any], now: datetime | None = None
 ) -> dict[str, Any]:
     """Export only fixed-puzzle data, omitting endpoints, account data and raw errors."""
-    from .monitor import CANDY_INSTRUCTIONS, CANDY_PROMPT
+    from .monitor import CANDY_INSTRUCTIONS, CANDY_PROMPT, CANDY_PROMPT_VERSION, CANDY_PROMPT_SHA256
 
     timestamp = now or datetime.now(UTC)
     runs = []
-    tasks = store.recent(limit=MAX_RUNS + 1, days=90, now=timestamp)
+    tasks = store.recent(limit=MAX_RUNS + 1, days=90, now=timestamp, prompt_version=CANDY_PROMPT_VERSION)
     for task in tasks:
         if task['status'] not in {'success', 'failed', 'cancelled'}:
             continue
         contract = task['contract']
         if not isinstance(contract, dict) or not contract.get('prompt_sha256'):
+            continue
+        if (contract.get("prompt_version") != CANDY_PROMPT_VERSION
+                or contract.get("prompt_sha256") != CANDY_PROMPT_SHA256
+                or contract.get("expected_answer") != 21):
             continue
         contract_id = hashlib.sha256(json.dumps(
             contract, sort_keys=True, ensure_ascii=False, separators=(",", ":")
@@ -103,6 +107,8 @@ def sync_reasoning_site(
     """Push stored results once without issuing model requests."""
     settings = settings or load_settings()
     credentials = credentials or load_credentials()
+    if validate_test(settings.get("test")) != default_test():
+        return {"success": True, "status": "custom_test_local_only"}
     try:
         site_url = validate_site_url(settings["site_url"])
         if not site_url:

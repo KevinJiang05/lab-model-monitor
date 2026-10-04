@@ -46,12 +46,16 @@ class RunStore:
             result[field] = json.loads(result.pop(field + "_json"))
         return result
 
-    def start(self, contract: dict[str, Any], *, schedule_day: str | None = None) -> str:
+    def start(self, contract: dict[str, Any], *, schedule_day: str | None = None,
+              method: dict[str, Any] | None = None, notify: bool = True) -> str:
         identity = str(uuid4())
         with self.connect() as db:
-            db.execute("INSERT INTO runs(run_id,created_at,status,contract_json,samples_json,result_json,origin,schedule_day) VALUES(?,?,'running',?,'[]','{}',?,?)",
+            db.execute("INSERT INTO runs(run_id,created_at,status,contract_json,samples_json,result_json,origin,schedule_day) VALUES(?,?,'running',?,'[]',?,?,?)",
                        (identity, datetime.now(UTC).isoformat(), json.dumps(contract, ensure_ascii=False),
+                        json.dumps({"method": method}, ensure_ascii=False) if method is not None else "{}",
                         "scheduled" if schedule_day else "manual", schedule_day))
+            if not notify:
+                db.execute("UPDATE runs SET feishu_status='skipped' WHERE run_id=?", (identity,))
         return identity
 
     def save_samples(self, run_id: str, samples: list[dict[str, Any]]) -> None:
@@ -93,11 +97,14 @@ class RunStore:
             row = db.execute("SELECT * FROM runs WHERE schedule_day=?", (day,)).fetchone()
         return self.decode(row) if row else None
 
-    def recent(self, *, days: int = 90, limit: int = 121, now: datetime | None = None) -> list[dict[str, Any]]:
+    def recent(self, *, days: int = 90, limit: int = 121, now: datetime | None = None,
+               prompt_version: str | None = None) -> list[dict[str, Any]]:
         cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
         with self.connect() as db:
-            rows = db.execute("SELECT * FROM runs WHERE created_at>=? ORDER BY created_at DESC LIMIT ?",
-                              (cutoff.isoformat(), limit)).fetchall()
+            condition = " AND json_extract(contract_json, '$.prompt_version')=?" if prompt_version else ""
+            parameters = [cutoff.isoformat(), *([prompt_version] if prompt_version else []), limit]
+            rows = db.execute("SELECT * FROM runs WHERE created_at>=?" + condition + " ORDER BY created_at DESC LIMIT ?",
+                              parameters).fetchall()
         return [self.decode(row) for row in rows]
 
     def pending_deliveries(self) -> list[dict[str, Any]]:

@@ -86,7 +86,7 @@ class MonitorTests(unittest.TestCase):
         self.run_monitor()
         result = self.run_monitor()
         self.assertTrue(all(item["seven_day_attempts"] == 2 for item in result["models"]))
-        self.schedule["reasoning_effort"] = "medium"
+        self.schedule["reasoning_effort"] = "high"
         result = self.run_monitor()
         self.assertTrue(all(item["seven_day_attempts"] == 1 for item in result["models"]))
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import http.client
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -154,6 +155,8 @@ class OpenAICompatibleClient:
         schema_name: str = "structured_response",
         reasoning_effort: str | None = None,
         max_output_tokens: int | None = None,
+        stream: bool | None = None,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> GPTResponse:
         normalized_input = str(input_text or "").strip()
         if not normalized_input:
@@ -167,9 +170,24 @@ class OpenAICompatibleClient:
             reasoning_effort=reasoning_effort,
             max_output_tokens=max_output_tokens,
         )
+        stream = self.config.api_mode == "responses" if stream is None else stream
+        if stream:
+            if self.config.api_mode != "responses":
+                raise ValueError("Streaming is supported only for Responses mode.")
+            payload["stream"] = True
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         try:
-            response = self._request_response(encoded)
+            if stream and self._requester is _request_json:
+                from .streaming import read_responses
+                request = urllib.request.Request(self.config.request_url, data=encoded, method="POST",
+                    headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json",
+                             "Accept": "text/event-stream", "User-Agent": f"LabModelMonitor/{__version__}"})
+                with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as incoming:
+                    response = (read_responses(incoming, on_progress)
+                                if "text/event-stream" in incoming.headers.get("Content-Type", "").lower()
+                                else _load_json_response(incoming))
+            else:
+                response = self._request_response(encoded)
         except urllib.error.HTTPError as exc:
             raise GPTAPIError(
                 f"GPT endpoint rejected the request with HTTP {int(exc.code)}. "
@@ -179,6 +197,8 @@ class OpenAICompatibleClient:
             raise GPTAPIError(
                 f"GPT endpoint could not be reached ({type(exc).__name__})."
             ) from None
+        except http.client.HTTPException:
+            raise GPTAPIError("GPT Responses stream was incomplete (connection closed).") from None
         if not isinstance(response, dict):
             raise GPTAPIError("GPT endpoint returned a non-object JSON response.")
         text = _extract_response_text(response, self.config.api_mode)
@@ -394,10 +414,12 @@ def _decode_responses_sse(text: str) -> dict[str, Any] | None:
                 )
             )
         if event_type == "response.incomplete":
-            details = response_payload.get("incomplete_details")
-            details_payload = details if isinstance(details, dict) else {}
-            reason = str(details_payload.get("reason") or "unknown")
-            raise GPTAPIError(f"GPT Responses stream was incomplete (reason={reason}).")
+            partial = dict(response_payload)
+            partial["status"] = "incomplete"
+            if not _extract_response_text(partial, "responses"):
+                partial["output_text"] = "".join(str(item["delta"]) for item in events
+                    if item.get("type") == "response.output_text.delta" and isinstance(item.get("delta"), str))
+            return partial
         if event_type == "error":
             error = event.get("error")
             error_payload = error if isinstance(error, dict) else {}

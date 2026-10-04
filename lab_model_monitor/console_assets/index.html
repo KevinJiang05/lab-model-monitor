@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模型监测 · 本地控制台</title>
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="/console.css">
+  <script src="/console.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">模型监测 <span class="local-label">本地</span></div>
+      <div class="header-actions"><a id="site-link" class="button quiet" target="_blank" rel="noreferrer" hidden>结果看板 ↗</a><button id="refresh" type="button" class="button quiet">刷新</button></div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="控制台页面">
+      <button id="tab-overview" type="button" role="tab" data-tab="overview" aria-controls="panel-overview" aria-selected="true">概览</button>
+      <button id="tab-detection" type="button" role="tab" data-tab="detection" aria-controls="panel-detection" aria-selected="false" tabindex="-1">检测设置</button>
+      <button id="tab-connections" type="button" role="tab" data-tab="connections" aria-controls="panel-connections" aria-selected="false" tabindex="-1">API 与通知</button>
+      <button id="tab-history" type="button" role="tab" data-tab="history" aria-controls="panel-history" aria-selected="false" tabindex="-1">运行记录 <span id="run-count" class="count">0</span></button>
+    </nav>
+  </header>
+  <main>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden><span id="notice-message"></span><button id="close-notice" type="button" aria-label="关闭提示">×</button></div>
+    <div id="job-status" class="job-status" role="status" hidden></div>
+    <section id="panel-overview" data-panel="overview" role="tabpanel" aria-labelledby="tab-overview">
+      <div class="status-strip" aria-label="运行状态">
+        <div><span>每日检测</span><strong id="daily-status">加载中</strong><small id="daily-detail">UTC+8</small></div>
+        <div><span>计划任务</span><strong id="task-status">—</strong><small id="next-run">—</small></div>
+        <div><span>模型 API</span><strong id="key-status">—</strong><small id="model-count">—</small></div>
+        <div><span>最近一轮</span><strong id="latest-status">—</strong><small id="latest-time">—</small></div>
+      </div>
+      <div class="operation-bar"><div class="action-buttons"><button id="run" type="button" class="button primary" disabled>立即检测</button><button id="sync" type="button" class="button secondary" disabled>同步结果</button></div><span class="muted">检测调用模型；同步重试已有结果的汇报。</span></div>
+      <section class="card"><div class="card-heading"><h1>最近结果</h1><button id="latest-details" type="button" class="button quiet" disabled>查看样本 →</button></div><div id="latest-models"></div></section>
+      <div class="saved-summary"><span id="overview-test">—</span><span id="overview-models">—</span><button type="button" class="text-button" data-goto="detection">修改设置</button></div>
+    </section>
+    <form id="settings-form" autocomplete="off" novalidate>
+      <section id="panel-detection" data-panel="detection" role="tabpanel" aria-labelledby="tab-detection" hidden>
+        <section class="card">
+          <div class="card-heading"><h1>计划与模型</h1><label class="toggle"><input id="enabled" type="checkbox">每日自动检测</label></div>
+          <div class="fields three">
+            <label>运行时间 <span class="hint">UTC+8</span><input id="daily-time" type="time" required></label>
+            <label>每个模型采样次数<input id="attempts" type="number" min="1" max="5" required></label>
+            <div class="field-help">定时运行需要电脑开机且用户已登录。暂停后仍可手动检测。</div>
+          </div>
+          <label class="last-field">检测模型 <span class="hint">每行一个，最多 10 个</span><textarea id="models" rows="3" required maxlength="2010" spellcheck="false"></textarea></label>
+        </section>
+        <details class="card disclosure" id="advanced-settings">
+          <summary><h2>推理参数</h2><span id="advanced-summary" class="muted">—</span></summary>
+          <div class="disclosure-body fields three">
+            <label>推理强度<select id="effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
+            <label>网络等待超时（秒）<input id="timeout" type="number" min="1" max="600" step="any" required></label>
+            <label>输出 Token 上限<input id="tokens" type="number" min="25000" max="128000" step="1" required></label>
+          </div>
+        </details>
+        <details class="card disclosure" id="test-settings">
+          <summary><h2>测试题与判分</h2><span id="prompt-kind" class="badge">标准糖果题</span></summary>
+          <div class="disclosure-body">
+            <div class="prompt-toolbar"><label for="expected">参考答案<input id="expected" type="number" min="0" max="999999" required></label><button id="restore-prompt" type="button" class="button secondary">恢复标准糖果题</button></div>
+            <label>系统指令<textarea id="instructions" rows="2" required maxlength="2000"></textarea></label>
+            <label class="last-field">提示词<textarea id="prompt" rows="12" required maxlength="10000"></textarea></label>
+            <p class="field-note">按首行纯整数判分。自定义题在本地和飞书展示；不支持视觉判分。</p>
+          </div>
+        </details>
+      </section>
+      <section id="panel-connections" data-panel="connections" role="tabpanel" aria-labelledby="tab-connections" hidden>
+        <div class="connection-grid">
+          <section class="card">
+            <div class="card-heading"><h1>模型 API</h1><button id="models-action" type="button" class="button secondary" title="使用已保存的端点和密钥获取模型列表" disabled>测试连接</button></div>
+            <label>API 端点<input id="base-url" type="url" required placeholder="https://api.example.com/v1" spellcheck="false"></label>
+            <label>协议<select id="api-mode"><option value="responses">Responses API</option><option value="chat_completions">Chat Completions API</option></select></label>
+            <div class="credential"><label for="api-key">API 密钥 <span class="credential-state" data-state="api_key">—</span></label><div class="credential-input"><input id="api-key" data-credential="api_key" type="password" maxlength="8192" autocomplete="new-password" placeholder="留空保留"><label class="clear"><input type="checkbox" data-clear="api_key">清除</label></div></div>
+            <p class="field-note">HTTPS 基础地址，可包含端口。密钥留空保留；环境变量优先。</p>
+            <section id="model-list" class="model-list" hidden><label>可用模型 <span class="hint">点击加入检测列表</span><input id="model-filter" data-ui type="search" placeholder="筛选模型" autocomplete="off"></label><div id="model-options"></div></section>
+          </section>
+          <div class="notification-settings">
+            <details class="card disclosure" id="feishu-settings">
+              <summary><h2>飞书通知</h2><span id="feishu-summary" class="badge">—</span></summary>
+              <div class="disclosure-body">
+                <label class="toggle field-toggle"><input id="feishu-enabled" type="checkbox">发送日报</label>
+                <div class="credential"><label for="feishu-app-id">App ID <span class="credential-state" data-state="feishu_app_id">—</span></label><div class="credential-input"><input id="feishu-app-id" data-credential="feishu_app_id" type="password" maxlength="8192" autocomplete="new-password" placeholder="留空保留"><label class="clear"><input type="checkbox" data-clear="feishu_app_id">清除</label></div></div>
+                <div class="credential"><label for="feishu-secret">App Secret <span class="credential-state" data-state="feishu_app_secret">—</span></label><div class="credential-input"><input id="feishu-secret" data-credential="feishu_app_secret" type="password" maxlength="8192" autocomplete="new-password" placeholder="留空保留"><label class="clear"><input type="checkbox" data-clear="feishu_app_secret">清除</label></div></div>
+                <div class="credential last-field"><label for="feishu-chat">群 Chat ID <span class="credential-state" data-state="feishu_chat_id">—</span></label><div class="credential-input"><input id="feishu-chat" data-credential="feishu_chat_id" type="password" maxlength="8192" autocomplete="new-password" placeholder="留空保留"><label class="clear"><input type="checkbox" data-clear="feishu_chat_id">清除</label></div></div>
+              </div>
+            </details>
+            <details class="card disclosure" id="site-settings">
+              <summary><h2>结果看板同步</h2><span id="site-summary" class="badge">—</span></summary>
+              <div class="disclosure-body">
+                <label>看板地址<input id="site-url" type="url" placeholder="留空停用同步" spellcheck="false"></label>
+                <div class="credential last-field"><label for="site-token">写凭据 <span class="credential-state" data-state="site_token">—</span></label><div class="credential-input"><input id="site-token" data-credential="site_token" type="password" maxlength="8192" autocomplete="new-password" placeholder="留空保留"><label class="clear"><input type="checkbox" data-clear="site_token">清除</label></div></div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+    </form>
+    <section id="panel-history" data-panel="history" role="tabpanel" aria-labelledby="tab-history" hidden>
+      <div class="page-heading"><h1>运行记录 <span id="history-count" class="muted"></span></h1><select id="run-filter" aria-label="筛选运行状态"><option value="all">全部状态</option><option value="failed">存在异常</option><option value="success">已完成</option><option value="running">运行中</option></select></div>
+      <div id="runs" class="run-list"><p class="muted">加载中…</p></div>
+      <p class="field-note">最近 90 天，最多显示 20 轮。</p>
+    </section>
+  </main>
+  <div id="savebar" class="savebar" hidden><div class="savebar-inner"><span id="dirty-status">已保存</span><div class="action-buttons"><button id="discard" type="button" class="button secondary" disabled>撤销修改</button><button id="save" type="submit" form="settings-form" class="button primary" aria-keyshortcuts="Control+S Meta+S" title="Ctrl+S" disabled>保存并应用</button></div></div></div>
+</body>
+</html>

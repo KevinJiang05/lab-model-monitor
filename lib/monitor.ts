@@ -27,6 +27,7 @@ export const snapshotSchema = z.object({
       expected_answer: z.number().int(), api_mode: z.enum(["responses", "chat_completions"]),
       reasoning_effort: z.string().max(50), max_output_tokens: z.number().int().positive(),
       timeout_seconds: z.number().positive(), web_search: z.boolean(), stream_failure_retry: z.boolean(),
+      stream: z.boolean().optional(),
     }), samples: z.array(sampleSchema).max(50),
   })).max(120),
 }).superRefine((data, ctx) => {
