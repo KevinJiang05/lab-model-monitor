@@ -46,17 +46,13 @@ export default function Animations() {
   return <div className={styles.page}>
     <TestHeader active="animation" />
     <main className={styles.main}>
-      <div className="test-heading"><h1>动画测试</h1><span>SVG / HTML · 每模型 1 次</span></div>
-      <section className={styles.runHeading} aria-label="本轮动画测试">
-        <h2>绵羊驾驶潜艇 <span>· {testedAt} UTC+8 · 推理 {results.reasoning_effort}</span></h2>
-        <p>{results.prompt}</p>
-      </section>
+      <div className={`test-heading ${styles.heading}`}><h1>动画测试</h1><p>{results.prompt}</p></div>
       <div className={styles.grid}>{samples.map((s, index) => <article className={styles.card} key={s.requested_model}>
         <button className={styles.thumbnail} disabled={!s.html} onClick={() => setActive(index)} aria-label={`放大预览 ${s.requested_model}`}>
           {s.html && thumbnails[s.sha256 || ""] ? <Image src={thumbnails[s.sha256 || ""]} width={1366} height={900} alt={`${s.requested_model} 的绵羊潜艇动画截图`} unoptimized /> : <span>{s.html ? "点击预览动画" : labels[s.status] || s.status}</span>}
           {s.html && <span className={styles.play}>点击播放 ↗</span>}
         </button>
-        <div className={styles.cardBody}><h2>{s.requested_model}</h2><p>{s.elapsed_seconds.toFixed(1)} 秒 · {s.total_tokens === null ? "用量未返回" : `${s.total_tokens.toLocaleString()} tokens`}</p><div><button disabled={!s.html} onClick={() => setActive(index)}>放大预览</button><button disabled={!s.html} onClick={() => download(s)}>下载 HTML</button></div></div>
+        <div className={styles.cardBody}><h2>{s.requested_model}</h2><p className={styles.runMeta}><time dateTime={results.created_at}>{testedAt} UTC+8</time><span>推理等级：{results.reasoning_effort}</span></p><p>{s.elapsed_seconds.toFixed(1)} 秒 · {s.total_tokens === null ? "用量未返回" : `${s.total_tokens.toLocaleString()} tokens`}</p><div><button disabled={!s.html} onClick={() => setActive(index)}>放大预览</button><button disabled={!s.html} onClick={() => download(s)}>下载 HTML</button></div></div>
       </article>)}</div>
       <p className={styles.note}>缩略图为本轮作品截图。点击后播放原始动画。</p>
       <dialog ref={dialog} className={styles.dialog} onClose={() => setActive(null)} onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
