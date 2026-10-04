@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "实验室模型监测 · Candy Test",
-  description: "GPT-6 Astra 与 GPT-6.1 Sol 的每日糖果题结果、接口可用性和历史记录。",
+  title: "实验室模型监测",
+  description: "GPT-6 Astra 与 GPT-6.1 Sol 的糖果推理测试、动画生成作品和运行记录。",
   other: {
     "codex-preview": "development",
   },

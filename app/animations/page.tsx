@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import TestHeader from "../test-header";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import results from "@/lib/animation-results.json";
@@ -9,6 +9,7 @@ import styles from "./page.module.css";
 type Sample = { requested_model: string; returned_model: string; status: string; html: string | null;
   elapsed_seconds: number; total_tokens: number | null; sha256: string | null; http_status: string | null };
 const samples: Sample[] = results.samples;
+const testedAt = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(results.created_at));
 const thumbnails: Record<string, string> = {
   a8ab7ce7a24b6f5115f70f8ddf702cc147d6457117b0fd0a6f75337edc3112bd: "/animations/astra.png",
   b89dea6c15c119b266f6c6bb363f31ca0e20abd2fa48ce0112270fe9ec43a0c4: "/animations/sol.png",
@@ -43,10 +44,13 @@ export default function Animations() {
     return () => { document.body.style.overflow = overflow; };
   }, [active]);
   return <div className={styles.page}>
-    <header className={styles.header}><Link href="/">实验室模型监测</Link><nav><Link href="/">糖果测试</Link><Link href="/animations" aria-current="page">动画测试</Link></nav></header>
+    <TestHeader active="animation" />
     <main className={styles.main}>
-      <div className={styles.title}><h1>绵羊驾驶潜艇</h1><span>SVG / HTML · 每模型 1 次</span></div>
-      <p className={styles.prompt}>{results.prompt}</p>
+      <div className="test-heading"><h1>动画测试</h1><span>SVG / HTML · 每模型 1 次</span></div>
+      <section className={styles.runHeading} aria-label="本轮动画测试">
+        <h2>绵羊驾驶潜艇 <span>· {testedAt} UTC+8 · 推理 {results.reasoning_effort}</span></h2>
+        <p>{results.prompt}</p>
+      </section>
       <div className={styles.grid}>{samples.map((s, index) => <article className={styles.card} key={s.requested_model}>
         <button className={styles.thumbnail} disabled={!s.html} onClick={() => setActive(index)} aria-label={`放大预览 ${s.requested_model}`}>
           {s.html && thumbnails[s.sha256 || ""] ? <Image src={thumbnails[s.sha256 || ""]} width={1366} height={900} alt={`${s.requested_model} 的绵羊潜艇动画截图`} unoptimized /> : <span>{s.html ? "点击预览动画" : labels[s.status] || s.status}</span>}

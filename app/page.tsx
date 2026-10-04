@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowUpRight, Candy, ChevronDown, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, ChevronDown, Clock3, RefreshCw } from "lucide-react";
 import { z } from "zod";
-import Link from "next/link";
+import TestHeader from "./test-header";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { complete, day, formatTime, freshness, snapshotSchema, statusText, summarize, type Snapshot } from "@/lib/monitor";
 
@@ -34,10 +34,9 @@ export default function Home() {
     const p: Record<string, string | number | null> = { date: date.slice(5).replace("-","/") };
     models.forEach(m => { p[m] = summarize(comparable.filter(r => day(r.created_at) === date).flatMap(r => r.samples).filter(s => s.requested_model === m))[metric]; }); return p;
   });
-  return <div className="shell">
-    <aside className="rail" aria-hidden="true"><span className="rail-logo"><Candy size={23}/></span><Activity size={22}/><span className="rail-label">LAB</span></aside>
-    <div className="workspace"><header className="topbar"><Link className="brand" href="/"><Candy size={23}/><span>实验室模型监测</span></Link><Link className="topnote" href="/animations">动画测试 →</Link><span className="readonly"><ShieldCheck size={15}/>只读看板</span></header>
-      <main><div className="heading"><div><div className="eyebrow">MODEL OBSERVATORY</div><h1>每日模型监测</h1><p>同一道糖果题，持续观察回答表现与接口状态。</p></div><button className="refresh" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : ""}/>刷新结果</button></div>
+  return <div className="monitor-page">
+    <div className="monitor-workspace"><TestHeader active="candy" />
+      <main><div className="heading test-heading"><div><h1>糖果测试</h1><p>回答正确率、接口状态与历史记录</p></div><button className="refresh" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : ""}/>刷新结果</button></div>
         <div className="statusline"><span className={`signal ${state}`}><span className="dot"/>{state === "fresh" ? "已收到最近测试" : state === "stale" ? "等待更新 · 数据可能过期" : state === "paused" ? "定时检测已暂停" : "等待首次同步"}</span><span><Clock3 size={15}/>{data?.schedule.enabled === false ? "检测已暂停" : `每日 ${data?.schedule.daily_time || "16:00"}`} · UTC+8</span><span>最近测试 {formatTime(latest?.ended_at || latest?.created_at || null)}</span></div>
         {error && <div className="notice" role="alert"><AlertTriangle size={18}/>{error}{data && " 当前显示上次读取的数据。"}</div>}
         {!data && <div className="empty" role="status"><Activity size={28}/><h2>{loading ? "正在读取监测结果" : error ? "结果暂时不可用" : "尚未收到检测结果"}</h2><p>{loading ? "稍等片刻。" : "同步成功后，这里会展示真实的模型回答与历史记录。"}</p></div>}
