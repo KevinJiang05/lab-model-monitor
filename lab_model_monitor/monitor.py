@@ -139,7 +139,11 @@ def summarize(samples: list[dict[str, Any]], contract: dict[str, Any], store: Ru
 def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str, str] | None = None,
                 store: RunStore | None = None, requester: JsonRequester | None = None,
                 scheduled: bool = False, lock_path: Path | None = None,
-                now: datetime | None = None, animation_test: bool = False) -> dict[str, Any]:
+                now: datetime | None = None, animation_test: bool = False,
+                animation_attempts: int | None = None) -> dict[str, Any]:
+    animation_limit = animation_attempts if animation_attempts is not None else (3 if scheduled else 1)
+    if type(animation_limit) is not int or not 1 <= animation_limit <= 3:
+        raise ValueError("Animation attempts must be 1 to 3.")
     settings = settings or load_settings()
     schedule = AIReasoningSchedule.from_mapping(settings["schedule"])
     timestamp = (now or datetime.now(UTC)).astimezone(TAIPEI)
@@ -157,13 +161,14 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
     if animation_test:
         test = {"instructions": animation.INSTRUCTIONS, "prompt": animation.PROMPT}
         contract.update(prompt_version=animation.VERSION, expected_answer=None,
-                        attempts_per_model=3 if scheduled else 1, stop_after_generated=True,
+                        attempts_per_model=animation_limit, stop_after_generated=True,
                         stream=settings["api"]["api_mode"] == "responses",
                         prompt_sha256=hashlib.sha256((animation.INSTRUCTIONS + "\n" + animation.PROMPT).encode()).hexdigest())
     with execution_lock(lock_path or STATE / "monitor.lock"):
         # An OS lock has no surviving owner after a crash. Keep partial evidence.
         for previous in store.recent(limit=500):
-            if previous["status"] == "running":
+            if (previous["status"] == "running"
+                    and (previous["contract"].get("prompt_version") == animation.VERSION) == animation_test):
                 for partial in previous["samples"]:
                     if partial.get("status") == "running":
                         partial.update(status="incomplete", completion_status="client_interrupted",
@@ -186,7 +191,7 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
             return {"success": False, "status": "already_run"}
         samples: list[dict[str, Any]] = []
         try:
-            for attempt in range(1, ((3 if scheduled else 1) if animation_test else schedule.attempts_per_model) + 1):
+            for attempt in range(1, (animation_limit if animation_test else schedule.attempts_per_model) + 1):
                 for model in schedule.models:
                     if animation_test and any(s["requested_model"] == model and s["status"] == "generated" for s in samples):
                         continue

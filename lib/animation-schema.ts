@@ -13,6 +13,7 @@ export const animationRunSchema = z.object({
     input_tokens: z.number().int().min(0).nullable(), output_tokens: z.number().int().min(0).nullable(),
     total_tokens: z.number().int().min(0).nullable(), completion_status: z.string().max(100),
     html: z.string().max(120000).nullable(), sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+    thumbnail: z.string().max(240022).regex(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/).nullable().optional(),
     http_status: z.string().regex(/^[45]\d\d$/).nullable(),
   })).max(30),
 });

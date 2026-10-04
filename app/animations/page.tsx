@@ -66,7 +66,7 @@ export default function Animations() {
       {syncError && <p className={styles.note}>最新结果加载失败，当前显示发布时的历史快照。</p>}
       <div className={styles.grid}>{entries.map(({sample: s, run}, index) => <article className={styles.card} key={`${run.run_id}-${s.requested_model}-${s.attempt || 1}`}>
         <button className={styles.thumbnail} disabled={!s.html} onClick={() => setActive(index)} aria-label={`放大预览 ${s.requested_model}`}>
-          {s.html && thumbnails[s.sha256 || ""] ? <Image src={thumbnails[s.sha256 || ""]} width={1366} height={900} alt={`${s.requested_model} 的绵羊潜艇动画截图`} unoptimized /> : <span>{s.html ? "点击预览动画" : s.status === "generated" ? "HTML 较大，仅本地保存" : labels[s.status] || s.status}</span>}
+          {(s.thumbnail || thumbnails[s.sha256 || ""]) ? <Image src={s.thumbnail || thumbnails[s.sha256 || ""]} width={1366} height={900} alt={`${s.requested_model} 的绵羊潜艇动画截图`} unoptimized /> : <span>{s.html ? "点击预览动画" : s.status === "generated" ? "HTML 较大，仅本地保存" : labels[s.status] || s.status}</span>}
           {s.html && <span className={styles.play}>点击播放 ↗</span>}
         </button>
         <div className={styles.cardBody}><h2>{s.requested_model}</h2><p className={styles.runMeta}><time dateTime={s.requested_at || run.created_at}>{testedAt(s.requested_at || run.created_at)} UTC+8</time><span>推理等级：{run.reasoning_effort}{s.attempt && s.attempt > 1 ? ` · 第 ${s.attempt} 次尝试` : ""}</span></p><p>{s.elapsed_seconds.toFixed(1)} 秒 · {s.total_tokens === null ? "用量未返回" : `${s.total_tokens.toLocaleString()} tokens`}</p><div><button disabled={!s.html} onClick={() => setActive(index)}>放大预览</button><button disabled={!s.html} onClick={() => download(s)}>下载 HTML</button></div></div>

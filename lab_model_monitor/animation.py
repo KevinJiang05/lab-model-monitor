@@ -56,6 +56,9 @@ def site_snapshot(store, now=None):
         if run["status"] == "running":
             continue
         item = projection(run)
+        from .artifacts import thumbnail_data
+        for sample in item["samples"]:
+            sample["thumbnail"] = thumbnail_data(store.path.parent / "artifacts" / run["run_id"] / f"{sample['sha256']}.png") if sample["sha256"] else None
         # Keep failed attempts as evidence, including oversized artifacts as metadata.
         for sample in item["samples"]:
             if sample["html"] and len(sample["html"].encode("utf-8")) > 120_000:

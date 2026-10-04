@@ -11,6 +11,7 @@
 .venv\Scripts\python.exe scripts\start_console.py
 .venv\Scripts\python.exe -m lab_model_monitor status
 .venv\Scripts\python.exe -m lab_model_monitor run
+.venv\Scripts\python.exe -m lab_model_monitor run-all
 .venv\Scripts\python.exe -m lab_model_monitor sync
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action Status
 ```
@@ -20,6 +21,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action
 控制台支持检测启停、时间、模型与采样次数、推理与超时、API 端点/协议、提示词/参考答案、API/Site/飞书凭据配置；“保存并应用”会更新本机 Windows 计划任务。密钥输入框永不回填，留空保留，勾选清除才删除本机保存值；环境变量依然优先。配置或计划更新失败会尝试恢复原配置和任务状态，页面显示实际状态。运行中禁止保存配置或启动其他操作。
 
 页面分为概览、检测设置、API 与通知、运行记录。推理参数、题面和通知配置默认折叠；配置页固定显示保存栏，支持 Ctrl+S 和撤销修改。切换页签保留未保存的输入；校验失败会跳到对应页签并展开字段。运行记录可按状态筛选，完整回答按样本展开。
+
+`run-all` 手动触发糖果和动画完整一轮，使用与定时任务相同的采样规则，记录为手动运行，不占用定时时段。
 
 “立即检测”及 `run` 会调用模型；“同步结果”及 `sync` 仅同步既有结果并重试待发送日报。API 连接测试只获取模型列表，不发出题目请求。已导入的历史记录不会补发日报。本地控制台可查看完整回答和各轮原始题面；公开 Sites 网页只负责展示结果。
 
@@ -32,7 +35,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action Enable
 ```
 
-计划任务名为 `LabModelMonitor-Daily`，使用本项目 `.venv` 和隐藏启动器。需要此 Windows 用户登录；机器关机或休眠时无法按时检测，恢复后 Windows 可补启动。按北京时间日期、时段、测试类型去重；同一时段重复启动不补测已执行的测试。错过时段后只执行当天最近一个已到时间段，不连跑积压轮次。两项测试串行运行，糖果失败不阻断动画。中断保留已完成样本，不自动补测。本地日志保存在 `runtime/logs/`。启用前必须配置模型及已启用汇报渠道的凭据。暂停后仍可手动检测。暂停或改时间后，如需立即更新云端计划展示，点击“同步结果”。
+计划任务名为 `LabModelMonitor-Daily`，使用本项目 `.venv` 和隐藏启动器。需要此 Windows 用户登录；机器关机或休眠时无法按时检测，恢复后 Windows 可补启动。按北京时间日期、时段、测试类型去重；同一时段重复启动不补测已执行的测试。错过时段后只执行当天最近一个已到时间段，不连跑积压轮次。两项测试并行运行，每种测试内部按顺序请求模型（最多两条模型请求并发）；糖果失败不阻断动画。中断保留已完成样本，不自动补测。本地日志保存在 `runtime/logs/`。启用前必须配置模型及已启用汇报渠道的凭据。暂停后仍可手动检测。暂停或改时间后，如需立即更新云端计划展示，点击“同步结果”。
 
 ## 数据和判分
 
@@ -69,3 +72,9 @@ node node_modules/eslint/bin/eslint.js . --ignore-pattern dist --ignore-pattern 
 ```
 
 Python 3.12+；网站依赖版本由现有 `package-lock.json` 固定。迁移验证见 `docs/migration.md`。
+
+## 自动交付动画文件
+
+动画完成后会自动把原始 HTML 导出至 `runtime/artifacts/<run_id>/model-<样本序号>.html`，并生成按 HTML SHA256 命名的 PNG 缩略图；`display.json` 保存展示信息，`artifacts.json` 保存文件处理状态。文件编号对应本轮全部尝试的原始顺序。截图使用本机 Edge（或 Chrome）无头模式、独立临时浏览器配置和禁止外部资源的隔离预览，不依赖量化项目或第三方 Python 包。
+
+手动 `animation`、`run-all` 和定时检测均接入自动导出；`sync` 只从已有证据补齐文件/截图并上传，不重跑模型。缩略图失败单独记录，可通过 `sync` 重试，不改变模型判定。缩略图随 D1 展示结果同步，后续新结果无需重新发布网站。原 HTML 不修改，缩略图为生成作品运行约 3 秒时的画面。

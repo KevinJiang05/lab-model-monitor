@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from datetime import UTC, datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from .config import configuration_readiness, credential_status, load_credentials, load_settings
 from .delivery import deliver
@@ -14,7 +15,7 @@ from .store import RunStore
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="实验室模型监测")
-    parser.add_argument("command", choices=("run", "scheduled-run", "sync", "status", "console", "animation"))
+    parser.add_argument("command", choices=("run", "run-all", "scheduled-run", "sync", "status", "console", "animation"))
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     try:
@@ -38,13 +39,33 @@ def main() -> int:
                     result = deliver(store=store, settings=settings, credentials=credentials)
                 else:
                     slot_time = datetime.now(UTC)
-                    result = run_monitor(settings=settings, store=store, credentials=credentials,
-                                         now=slot_time, scheduled=args.command == "scheduled-run", animation_test=args.command == "animation")
-                    if args.command == "scheduled-run" and result["status"] not in {"disabled", "not_due"}:
-                        animation_result = run_monitor(settings=settings, store=store, credentials=credentials,
-                                                       scheduled=True, animation_test=True, now=slot_time)
+                    if args.command in {"scheduled-run", "run-all"}:
+                        # One model request per lane; both lanes share the outer job lock.
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            futures = [pool.submit(run_monitor, settings=settings, store=store,
+                                credentials=credentials, now=slot_time,
+                                scheduled=args.command == "scheduled-run", animation_test=animation,
+                                animation_attempts=3, lock_path=STATE / ("animation.lock" if animation else "candy.lock"))
+                                for animation in (False, True)]
+                            outcomes = []
+                            for future in futures:
+                                try:
+                                    outcomes.append(future.result())
+                                except Exception as exc:
+                                    outcomes.append({"success": False, "status": "operation_failed", "error_type": type(exc).__name__})
+                        result, animation_result = outcomes
                         result["animation"] = animation_result
                         result["success"] = result["success"] and animation_result["success"]
+                    else:
+                        result = run_monitor(settings=settings, store=store, credentials=credentials,
+                                             now=slot_time, animation_test=args.command == "animation")
+                    animation_run = result if args.command == "animation" else result.get("animation", {})
+                    if animation_run.get("run_id"):
+                        from .artifacts import prepare_run
+                        animation_run["artifacts"] = prepare_run(store, animation_run["run_id"])
+                    if args.command == "animation":
+                        from .site import sync_reasoning_site
+                        result["site"] = sync_reasoning_site(store=store, settings=settings, credentials=credentials)
                     if args.command != "animation" and result["status"] not in {"disabled", "not_due"}:
                         result["delivery"] = deliver(store=store, settings=settings, credentials=credentials,
                                                       run_id=result.get("run_id"))

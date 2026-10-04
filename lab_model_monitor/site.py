@@ -120,8 +120,13 @@ def sync_reasoning_site(
         snapshot = build_reasoning_site_snapshot(
             store=store or RunStore(), schedule=settings["schedule"]
         )
-        from .animation import site_snapshot
-        animation_snapshot = site_snapshot(store or RunStore())
+        from .animation import site_snapshot, VERSION
+        from .artifacts import prepare_run
+        artifact_store = store or RunStore()
+        for run in artifact_store.recent(prompt_version=VERSION, limit=12):
+            if run["status"] != "running":
+                prepare_run(artifact_store, run["run_id"])
+        animation_snapshot = site_snapshot(artifact_store)
         for payload in (snapshot, animation_snapshot):
             body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
             if len(body) > MAX_BODY_BYTES:

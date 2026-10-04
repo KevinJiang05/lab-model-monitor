@@ -80,6 +80,49 @@ class SlotTests(unittest.TestCase):
         self.assertTrue(runner.call_args_list[1].kwargs['animation_test'])
         self.assertEqual(runner.call_args_list[0].kwargs['now'], runner.call_args_list[1].kwargs['now'])
 
+    def test_manual_pair_is_concurrent_and_never_claims_schedule_slots(self):
+        from lab_model_monitor.__main__ import main
+        from threading import Barrier
+        barrier = Barrier(2)
+        seen = []
+        def runner(**kwargs):
+            seen.append(kwargs)
+            barrier.wait(timeout=3)  # A sequential runner cannot pass this barrier.
+            return {"success": True, "status": "success"}
+        with patch('sys.argv', ['monitor', 'run-all']), patch('lab_model_monitor.__main__.RunStore', return_value=self.store), \
+             patch('lab_model_monitor.__main__.load_settings', return_value=self.settings), \
+             patch('lab_model_monitor.__main__.load_credentials', return_value={'api_key': 'test'}), \
+             patch('lab_model_monitor.__main__.STATE', self.root), \
+             patch('lab_model_monitor.__main__.run_monitor', side_effect=runner), \
+             patch('lab_model_monitor.__main__.deliver', return_value={'success': True}), patch('builtins.print'):
+            self.assertEqual(main(), 0)
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(all(not k['scheduled'] for k in seen))
+        self.assertEqual({k['animation_test'] for k in seen}, {True, False})
+        self.assertEqual(len({k['lock_path'] for k in seen}), 2)
+
+    def test_parallel_lanes_do_not_finalize_each_others_running_evidence(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        barrier = Barrier(2)
+        def lane(animation):
+            count = 0
+            def request(*args):
+                nonlocal count
+                count += 1
+                if count == 1:
+                    barrier.wait(timeout=3)
+                return {'output_text': HTML if animation else '21', 'status': 'completed'}
+            return run_monitor(settings=self.settings, credentials={'api_key': 'test'}, store=self.store,
+                               animation_test=animation, animation_attempts=3, requester=request,
+                               lock_path=self.root / ('animation.lock' if animation else 'candy.lock'))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(lane, a) for a in (False, True)]
+            results = [f.result() for f in futures]
+        self.assertTrue(all(r['success'] for r in results))
+        self.assertEqual(sorted(len(r['samples']) for r in self.store.recent()), [2, 6])
+        self.assertTrue(all(r['status'] == 'success' and r['origin'] == 'manual' for r in self.store.recent()))
+
     def test_invalid_multiple_times(self):
         for times in (['15:00', '15:00'], ['25:00'], '15:00,20:00'):
             with self.assertRaises(ValueError):
