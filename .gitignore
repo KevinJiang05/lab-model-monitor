@@ -46,3 +46,10 @@ next-env.d.ts
 /work/
 .dev.vars*
 *.tsbuildinfo
+
+# Independent monitor: private runtime state and local Python tools.
+/runtime/
+/.venv/
+__pycache__/
+*.py[cod]
+/.ruff_cache/

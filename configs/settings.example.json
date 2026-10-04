@@ -1,0 +1,7 @@
+{
+  "timezone": "Asia/Taipei",
+  "api": {"base_url": "https://api.openai.com/v1", "model": "gpt-6-astra", "api_mode": "responses", "timeout_seconds": 300},
+  "schedule": {"enabled": true, "daily_time": "16:00", "models": ["gpt-6-astra", "gpt-6.1-sol"], "attempts_per_model": 3, "reasoning_effort": "high", "timeout_seconds": 300, "max_output_tokens": 32768},
+  "site_url": "",
+  "feishu_enabled": true
+}
