@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import base64
 import html
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 from uuid import UUID
 
 from .animation import projection
@@ -34,33 +36,89 @@ def capture_thumbnail(source: str, destination: Path) -> None:
     policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     # A fresh browser profile and opaque iframe match the hosted preview isolation.
     # Put CSP first so model markup cannot load external resources before it applies.
-    isolated = '<meta http-equiv="Content-Security-Policy" content="' + policy + '">' + source
+    ready_script = '<script>addEventListener("load",()=>requestAnimationFrame(()=>requestAnimationFrame(()=>parent.postMessage("thumbnail-ready","*"))))</script>'
+    isolated = '<meta http-equiv="Content-Security-Policy" content="' + policy + '">' + ready_script + source
+    wrapper = ('<!doctype html><style>html,body{margin:0;overflow:hidden;background:white}'
+               'iframe{border:0;width:1366px;height:900px;transform:scale(.351391);transform-origin:top left}</style>'
+               '<script>addEventListener("message",e=>{if(e.data==="thumbnail-ready"&&e.source===document.querySelector("iframe").contentWindow)fetch("/ready")})</script>'
+               '<iframe sandbox="allow-scripts" srcdoc="' + html.escape(isolated, quote=True) + '"></iframe>'
+               '<img hidden src="/wait.png">').encode('utf-8')
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.capture-') as temp:
         root = Path(temp)
-        wrapper = root / 'preview.html'
-        wrapper.write_text('<!doctype html><style>html,body{margin:0;overflow:hidden;background:white}iframe{border:0;width:1366px;height:900px;transform:scale(.351391);transform-origin:top left}</style><iframe sandbox="allow-scripts" srcdoc="' + html.escape(isolated, quote=True) + '"></iframe>', encoding='utf-8')
         output = root / 'thumbnail.png'
-        command = [str(browser), '--headless=new', '--disable-gpu', '--no-first-run',
-                   '--no-default-browser-check', '--disable-background-networking', '--hide-scrollbars',
-                   '--run-all-compositor-stages-before-draw', '--force-device-scale-factor=1', '--window-size=480,317', '--virtual-time-budget=3000',
-                   '--user-data-dir=' + str(root / 'profile'), '--screenshot=' + str(output), wrapper.as_uri()]
-        for attempt in range(2):
-            process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        # Keep the wrapper loading until its opaque child has rendered two frames.
+        # Virtual-time fast-forward alone can capture before that child is painted.
+        for attempt, timeout in enumerate((10_000, 20_000)):
+            output.unlink(missing_ok=True)
+            ready = threading.Event()
+
+            class PreviewHandler(BaseHTTPRequestHandler):
+                render_ready = ready
+                render_timeout = timeout / 1000
+
+                def do_GET(self):
+                    if self.path == '/preview.html':
+                        body, content_type = wrapper, 'text/html; charset=utf-8'
+                    elif self.path == '/ready':
+                        self.render_ready.set()
+                        body, content_type = b'', 'text/plain'
+                    elif self.path == '/wait.png':
+                        self.render_ready.wait(self.render_timeout)
+                        body, content_type = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), 'image/png'
+                    else:
+                        self.send_error(404)
+                        return
+                    try:
+                        self.send_response(200)
+                        self.send_header('Content-Type', content_type)
+                        self.send_header('Content-Length', str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                    except OSError:
+                        pass  # The owned browser may have timed out or exited.
+
+                def log_message(self, *args):
+                    pass
+
+            server = ThreadingHTTPServer(('127.0.0.1', 0), PreviewHandler)
+            thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .05}, daemon=True)
+            thread.start()
+            command = [str(browser), '--headless=new', '--disable-gpu', '--no-first-run',
+                       '--no-default-browser-check', '--disable-background-networking', '--hide-scrollbars',
+                       '--run-all-compositor-stages-before-draw', '--force-device-scale-factor=1', '--window-size=480,317',
+                       f'--timeout={timeout}', '--user-data-dir=' + str(root / f'profile-{attempt}'),
+                       '--screenshot=' + str(output), f'http://127.0.0.1:{server.server_port}/preview.html']
+            failure = None
             try:
-                process.wait(timeout=45)
-            except subprocess.TimeoutExpired:
-                subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
-                process.wait(timeout=5)
-                raise RuntimeError('Thumbnail timed out') from None
-            if process.returncode or thumbnail_data(output) is None or output.stat().st_size < 2500:
-                if attempt == 0:
-                    continue
-                raise RuntimeError('Thumbnail capture failed')
-            break
-        output.replace(destination)
+                process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                           creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                try:
+                    process.wait(timeout=45)
+                except subprocess.TimeoutExpired:
+                    subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+                    process.wait(timeout=5)
+                    failure = 'Thumbnail timed out'
+                else:
+                    if process.returncode:
+                        failure = 'Thumbnail browser failed'
+                    elif not ready.is_set():
+                        failure = 'Thumbnail frame did not finish rendering'
+                    elif thumbnail_data(output) is None:
+                        failure = 'Thumbnail missing or invalid'
+                    elif output.stat().st_size < 2500:
+                        failure = 'Thumbnail was blank'
+            finally:
+                ready.set()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+            if failure is None:
+                output.replace(destination)
+                return
+            if attempt == 1:
+                raise RuntimeError(failure)
 
 
 def export_run(run: dict, root: Path, *, renderer=capture_thumbnail) -> dict:
