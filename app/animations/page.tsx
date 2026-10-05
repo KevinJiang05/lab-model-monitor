@@ -3,12 +3,11 @@
 import TestHeader from "../test-header";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import initialResults from "@/lib/animation-results.json";
-import { animationSnapshotSchema, animationRunSchema, type AnimationRun } from "@/lib/animation-schema";
+import { animationSnapshotSchema, type AnimationRun } from "@/lib/animation-schema";
 import styles from "./page.module.css";
 
 type Sample = AnimationRun["samples"][number];
-const initialRun = animationRunSchema.parse(initialResults);
+const prompt = "创建一个 HTML，内容是 SVG 绘制一个绵羊驾驶潜艇的 2D 动画。";
 function testedAt(value: string) {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
@@ -34,24 +33,31 @@ function download(sample: Sample) {
 }
 
 export default function Animations() {
-  const [runs, setRuns] = useState<AnimationRun[]>([initialRun]);
+  const [runs, setRuns] = useState<AnimationRun[]>([]);
   const [syncError, setSyncError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [requestVersion, setRequestVersion] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
+    let disposed = false;
+    const timeout = setTimeout(() => controller.abort(), 20000);
     fetch("/api/snapshot?test=animation", { signal: controller.signal, cache: "no-store" })
       .then(response => { if (!response.ok) throw new Error("load failed"); return response.json(); })
       .then(data => {
         if (!data || typeof data !== "object" || !("success" in data) || !data.success) throw new Error("load failed");
-        if ("snapshot" in data && data.snapshot) setRuns(animationSnapshotSchema.parse(data.snapshot).runs);
-      }).catch(() => { if (!controller.signal.aborted) setSyncError(true); });
-    return () => controller.abort();
-  }, []);
+        if (!("snapshot" in data)) throw new Error("invalid response");
+        const received = data.snapshot === null ? [] : animationSnapshotSchema.parse(data.snapshot).runs;
+        if (!disposed) setRuns(received);
+      }).catch(() => { if (!disposed) setSyncError(true); })
+      .finally(() => { clearTimeout(timeout); if (!disposed) setLoading(false); });
+    return () => { disposed = true; clearTimeout(timeout); controller.abort(); };
+  }, [requestVersion]);
   const entries = runs.flatMap(run => run.samples.map(sample => ({ run, sample })));
   const [active, setActive] = useState<number | null>(null);
   const [revision, setRevision] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const sample = active === null ? null : entries[active]?.sample;
-  const activeRun = active === null ? initialRun : entries[active]?.run || initialRun;
+  const activeRun = active === null ? null : entries[active]?.run;
   useEffect(() => {
     if (active === null) return;
     const overflow = document.body.style.overflow;
@@ -62,8 +68,10 @@ export default function Animations() {
   return <div className={styles.page}>
     <TestHeader active="animation" />
     <main className={styles.main}>
-      <div className={`test-heading ${styles.heading}`}><h1>动画测试</h1><p>{initialRun.prompt}</p></div>
-      {syncError && <p className={styles.note}>最新结果加载失败，当前显示发布时的历史快照。</p>}
+      <div className={`test-heading ${styles.heading}`}><h1>动画测试</h1><p>{prompt}</p></div>
+      {loading && <div role="status" aria-live="polite"><p className={styles.note}>正在加载动画结果…</p><div className={styles.grid} aria-hidden="true">{[0,1,2].map(i => <div className={styles.skeleton} key={i}><div/><span/><span/></div>)}</div></div>}
+      {syncError && <div className={styles.loadState} role="alert">动画结果加载失败。<button onClick={() => { setSyncError(false); setLoading(true); setRequestVersion(n => n + 1); }}>重试</button></div>}
+      {!loading && !syncError && entries.length === 0 && <p className={styles.loadState} role="status">暂无已同步的动画结果。</p>}
       <div className={styles.grid}>{entries.map(({sample: s, run}, index) => <article className={styles.card} key={`${run.run_id}-${s.requested_model}-${s.attempt || 1}`}>
         <button className={styles.thumbnail} disabled={!s.html} onClick={() => setActive(index)} aria-label={`放大预览 ${s.requested_model}`}>
           {(s.thumbnail || thumbnails[s.sha256 || ""]) ? <Image src={s.thumbnail || thumbnails[s.sha256 || ""]} width={1366} height={900} alt={`${s.requested_model} 的绵羊潜艇动画截图`} unoptimized /> : <span>{s.html ? "点击预览动画" : s.status === "generated" ? "HTML 较大，仅本地保存" : labels[s.status] || s.status}</span>}
@@ -73,7 +81,7 @@ export default function Animations() {
       </article>)}</div>
       <p className={styles.note}>点击预览原始动画。每天北京时间 15:00、20:00 检测；每模型成功 1 次，失败最多尝试 3 次。</p>
       <dialog ref={dialog} className={styles.dialog} onClose={() => setActive(null)} onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
-      {sample && <div className={styles.dialogBody}>
+      {sample && activeRun && <div className={styles.dialogBody}>
         <div className={styles.dialogHeading}><h2>{sample.requested_model}</h2><button autoFocus onClick={() => dialog.current?.close()} aria-label="关闭预览">关闭 ×</button></div>
         <div className={styles.toolbar}><span>{labels[sample.status] || sample.status}{sample.http_status ? ` · HTTP ${sample.http_status}` : ""}</span><span>{sample.elapsed_seconds.toFixed(1)} 秒 · {sample.total_tokens === null ? "用量未返回" : `${sample.total_tokens.toLocaleString()} tokens`}</span><div><button disabled={!sample.html} onClick={() => void document.getElementById("animation-preview")?.requestFullscreen().catch(() => {})}>全屏预览</button><button disabled={!sample.html} onClick={() => setRevision(n => n + 1)}>重播</button><button disabled={!sample.html} onClick={() => download(sample)}>下载 HTML</button></div></div>
         {sample.html ? <iframe id="animation-preview" key={`${active}-${revision}`} className={styles.frame} title={`${sample.requested_model} 生成的动画`} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={preview(sample.html)} /> : <div className={styles.empty}>{labels[sample.status] || "没有可预览的完整 HTML"}</div>}
