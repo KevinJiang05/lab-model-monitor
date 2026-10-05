@@ -98,10 +98,12 @@ class RunStore:
         return self.decode(row) if row else None
 
     def recent(self, *, days: int = 90, limit: int = 121, now: datetime | None = None,
-               prompt_version: str | None = None) -> list[dict[str, Any]]:
+               prompt_version: str | None = None, completed_only: bool = False) -> list[dict[str, Any]]:
         cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
         with self.connect() as db:
             condition = " AND json_extract(contract_json, '$.prompt_version')=?" if prompt_version else ""
+            if completed_only:
+                condition += " AND status!='running'"
             parameters = [cutoff.isoformat(), *([prompt_version] if prompt_version else []), limit]
             rows = db.execute("SELECT * FROM runs WHERE created_at>=?" + condition + " ORDER BY created_at DESC LIMIT ?",
                               parameters).fetchall()

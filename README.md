@@ -80,7 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action
 
 Responses 模式下的动画和整数题均默认使用流式请求，Chat Completions 保留非流式兼容路径。收到文本后每秒最多写入一次 SQLite，完成事件强制保存；运行中可查看已接收字符数。网络等待超时约束单次网络等待，不是整个生成任务的总时限。完成事件到达立即结束读取，连接中断保留已收到文本；停止本地进程不保证上游取消或停止计费。`generated` 只表示收到含 SVG 的完整 HTML，不代表视觉质量通过；接口失败、截断、格式错误独立记录。导出时只去除外围 Markdown 围栏，不修补模型作品。
 
-`.venv\Scripts\python.exe scripts/export_animation.py <run_id>` 从既有数据库导出 HTML 和缩略图到 `runtime/artifacts/<run_id>/`，不会调用模型。网页从云端读取已同步结果，首次打开显示加载占位；加载失败可重试，不再使用源码中的旧静态快照。旧导出参数 `--site` 已移除；需要更新云端时执行独立的 `sync` 命令。定时任务和 `sync` 会从 SQLite 自动同步动画到现有 D1 的独立展示行，无需重新发布网站。动画展示最多最近 12 轮、总计 900 KB；超过 120 KB 的单个 HTML 只展示元数据，原文件仍保存在本地证据中。发布后本机关机仍可浏览和下载已同步动画。
+`.venv\Scripts\python.exe scripts/export_animation.py <run_id>` 从既有数据库导出 HTML 和缩略图到 `runtime/artifacts/<run_id>/`，不会调用模型。网页从云端读取已同步结果，首次打开显示加载占位；加载失败可重试，不再使用源码中的旧静态快照。旧导出参数 `--site` 已移除；需要更新云端时执行独立的 `sync` 命令。定时任务和 `sync` 会从 SQLite 自动同步动画，无需重新发布网站。动画展示最近 20 轮已结束检测，含失败记录；运行中的检测不会挤占历史窗口。每轮使用现有 D1 表中的独立展示行，并以同一事务更新索引和清理过期展示行；兼容旧版单行快照。总同步上限为 32 MiB，每轮展示内容上限为 1.5 MB。超过 120 KB 的单个 HTML 只展示元数据；单轮容量不足时先移除缩略图，再将超大 HTML 保留为元数据，不再丢弃整轮历史。原始记录和文件仍保存在本地证据中。发布后本机关机仍可浏览和下载已同步动画。
 
 Site 的 `/animations` 提供结果卡片、隔离预览、重播、源码和 HTML 下载。预览禁止外部资源与网络请求；下载保留模型原稿。网站沿用现有访问权限。
 
@@ -89,10 +89,13 @@ Site 的 `/animations` 提供结果卡片、隔离预览、重播、源码和 HT
 `.openai/hosting.json` 保留现有 Site 身份。当前域名和访问权限沿用现有发布设置。`npm run dev` 本地预览；网站发布使用 Sites 插件流程，既有 D1 迁移保持不变。
 后端原始数据、凭据、`.venv`、日志、构建缓存均被 Git 忽略，运行时不会依赖量化项目。
 
+升级到 20 轮分行展示时，先发布网站再执行 Python `sync`，从已有 SQLite 证据恢复历史。若回滚到旧版单行实现，需要同时用旧版同步程序重建单行展示快照；仅回滚网站源码无法读取新格式。两种格式转换均不修改本地原始证据。
+
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests -v
 node node_modules/typescript/bin/tsc --noEmit
 node node_modules/eslint/bin/eslint.js . --ignore-pattern dist --ignore-pattern .next
+npm run test:site
 ```
 
 Python 3.12+；网站依赖版本由现有 `package-lock.json` 固定。迁移验证见 `docs/migration.md`。

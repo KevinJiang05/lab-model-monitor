@@ -15,7 +15,7 @@ from .store import RunStore
 from .config import default_test, load_settings, load_credentials, validate_test
 
 MAX_RUNS = 120
-MAX_BODY_BYTES = 16 * 1024 * 1024
+MAX_BODY_BYTES = 32 * 1024 * 1024
 SAMPLE_STATUSES = {"passed", "wrong_answer", "format_error", "timeout", "api_error", "incomplete"}
 PUBLIC_CONTRACT_FIELDS = (
     "prompt_version", "prompt_sha256", "expected_answer", "api_mode", "reasoning_effort",
@@ -120,12 +120,11 @@ def sync_reasoning_site(
         snapshot = build_reasoning_site_snapshot(
             store=store or RunStore(), schedule=settings["schedule"]
         )
-        from .animation import site_snapshot, VERSION
+        from .animation import site_snapshot, VERSION, MAX_SITE_RUNS
         from .artifacts import prepare_run
         artifact_store = store or RunStore()
-        for run in artifact_store.recent(prompt_version=VERSION, limit=12):
-            if run["status"] != "running":
-                prepare_run(artifact_store, run["run_id"])
+        for run in artifact_store.recent(prompt_version=VERSION, limit=MAX_SITE_RUNS, completed_only=True):
+            prepare_run(artifact_store, run["run_id"])
         animation_snapshot = site_snapshot(artifact_store)
         for payload in (snapshot, animation_snapshot):
             body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")

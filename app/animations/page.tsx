@@ -76,7 +76,7 @@ export default function Animations() {
     <TestHeader active="animation" />
     <main className={styles.main}>
       <div className={`test-heading ${styles.heading}`}><h1>动画测试</h1><p>绵羊驾驶潜艇 · SVG 2D 动画</p><span className={styles.syncMeta}>{!loading && !syncError ? `${runs.length} 轮检测 · 北京时间 UTC+8` : "北京时间 UTC+8"}</span></div>
-      <details className={styles.method}><summary>提示词与检测规则 <span>已生成 ≠ 视觉通过</span></summary><div><p>固定提示词：{prompt}</p><p>每天北京时间 15:00、20:00 检测；每模型成功 1 次，失败最多尝试 3 次。已生成仅表示交付完整 HTML，视觉效果待评价。点击缩略图或“预览”播放模型原稿。</p>{syncedAt && <p>结果同步：<time dateTime={syncedAt}>{testedAt(syncedAt)} UTC+8</time></p>}</div></details>
+      <details className={styles.method}><summary>提示词与检测规则 <span>已生成 ≠ 视觉通过</span></summary><div><p>固定提示词：{prompt}</p><p>每天北京时间 15:00、20:00 检测；每模型成功 1 次，失败最多尝试 3 次。展示最近 20 轮检测，含失败记录。已生成仅表示交付完整 HTML，视觉效果待评价。点击缩略图或“预览”播放模型原稿。</p>{syncedAt && <p>结果同步：<time dateTime={syncedAt}>{testedAt(syncedAt)} UTC+8</time></p>}</div></details>
       {loading && <div className={styles.loading} role="status" aria-live="polite"><span>正在加载检测结果…</span>{[0, 1, 2].map(n => <div className={styles.skeleton} key={n} aria-hidden="true"><i /><div /><div /></div>)}</div>}
       {syncError && <div className={styles.loadState} role="alert"><div><strong>检测结果加载失败</strong><p>请重试加载最新记录。</p></div><button onClick={() => { setSyncError(false); setLoading(true); setRequestVersion(n => n + 1); }}>重新加载</button></div>}
       {!loading && !syncError && runs.length === 0 && <p className={styles.noResults} role="status">暂无已同步的动画检测记录。</p>}

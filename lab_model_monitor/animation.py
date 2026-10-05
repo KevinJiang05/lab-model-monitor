@@ -9,6 +9,8 @@ PROMPT = "创建一个 HTML，内容是 SVG 绘制一个绵羊驾驶潜艇的 2D
 INSTRUCTIONS = "请只返回一个完整、可独立打开的 HTML 文件，不要附加解释。"
 VERSION = "sheep-submarine-html-v1"
 MAX_HTML_BYTES = 512_000
+MAX_SITE_RUNS = 20
+MAX_SITE_RUN_BYTES = 1_500_000
 
 
 def extract_html(text: str) -> str | None:
@@ -46,15 +48,13 @@ def projection(run: dict[str, Any]) -> dict[str, Any]:
 
 
 def site_snapshot(store, now=None):
-    """Newest animation evidence, bounded to 12 runs / 900 KB for one D1 row."""
+    """Keep 20 completed runs; each run fits its own D1 display row."""
     import json
     from datetime import UTC, datetime
     timestamp = now or datetime.now(UTC)
     payload = {"kind": "animation", "schema_version": 1,
                "synced_at": timestamp.isoformat(), "runs": []}
-    for run in store.recent(prompt_version=VERSION, limit=12, now=timestamp):
-        if run["status"] == "running":
-            continue
+    for run in store.recent(prompt_version=VERSION, limit=MAX_SITE_RUNS, now=timestamp, completed_only=True):
         item = projection(run)
         from .artifacts import thumbnail_data
         for sample in item["samples"]:
@@ -63,8 +63,12 @@ def site_snapshot(store, now=None):
         for sample in item["samples"]:
             if sample["html"] and len(sample["html"].encode("utf-8")) > 120_000:
                 sample["html"] = None
+        # Images must not evict a run or its HTML. Drop the largest optional
+        # images first, then exceptionally large HTML as metadata if necessary.
+        for field in ("thumbnail", "html"):
+            for sample in sorted(item["samples"], key=lambda s: len(s[field] or ""), reverse=True):
+                if len(json.dumps(item, ensure_ascii=False).encode("utf-8")) <= MAX_SITE_RUN_BYTES:
+                    break
+                sample[field] = None
         payload["runs"].append(item)
-        if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > 900_000:
-            payload["runs"].pop()
-            break
     return payload

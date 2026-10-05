@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { monitorDb, writeToken } from "@/db/monitor";
-import { animationSnapshotSchema } from "@/lib/animation-schema";
+import { writeAnimationSnapshot } from "@/db/animation";
+import { animationSnapshotSchema, MAX_ANIMATION_SNAPSHOT_BYTES } from "@/lib/animation-schema";
 import { snapshotSchema } from "@/lib/monitor";
 
 export async function POST(request: Request) {
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
   const expected = Buffer.from(`Bearer ${token}`);
   if (!token || actual.length !== expected.length || !timingSafeEqual(actual,expected))
     return Response.json({ success: false, error: "unauthorized" }, { status: 401 });
-  const limit = 16 * 1024 * 1024;
+  const limit = MAX_ANIMATION_SNAPSHOT_BYTES;
   if (Number(request.headers.get("Content-Length")) > limit)
     return Response.json({ success: false, error: "too_large" }, { status: 413 });
   try {
@@ -23,7 +24,11 @@ export async function POST(request: Request) {
       chunks.push(value);
     }
     let parsed: unknown;
-    try { parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+    try {
+      const body = Buffer.concat(chunks);
+      chunks.length = 0;
+      parsed = JSON.parse(body.toString("utf8"));
+    }
     catch { return Response.json({ success: false, error: "invalid_json" }, { status: 400 }); }
     const isAnimation = !!parsed && typeof parsed === "object" && "kind" in parsed && parsed.kind === "animation";
     const validated = isAnimation ? animationSnapshotSchema.safeParse(parsed) : snapshotSchema.safeParse(parsed);
@@ -32,9 +37,14 @@ export async function POST(request: Request) {
     const stamp = Date.parse(snapshot.synced_at);
     if (stamp > Date.now() + 60000) return Response.json({ success: false, error: "future_snapshot" }, { status: 400 });
     snapshot.runs.sort((a,b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    if ("kind" in snapshot) {
+      const updated = await writeAnimationSnapshot(monitorDb(), snapshot);
+      if (!updated) return Response.json({ success: false, error: "older_snapshot" }, { status: 409 });
+      return Response.json({ success: true, runs: snapshot.runs.length });
+    }
     const result = await monitorDb().prepare(`INSERT INTO monitor_snapshots (id, payload, generated_at) VALUES (?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, generated_at = excluded.generated_at
-      WHERE excluded.generated_at >= monitor_snapshots.generated_at`).bind(isAnimation ? "animation" : "main", JSON.stringify(snapshot), stamp).run();
+      WHERE excluded.generated_at >= monitor_snapshots.generated_at`).bind("main", JSON.stringify(snapshot), stamp).run();
     if (!result.meta.changes) return Response.json({ success: false, error: "older_snapshot" }, { status: 409 });
     return Response.json({ success: true, runs: snapshot.runs.length });
   } catch {
