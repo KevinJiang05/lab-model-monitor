@@ -30,7 +30,8 @@
     "types": [
       "node",
       "@cloudflare/workers-types"
-    ]
+    ],
+    "tsBuildInfoFile": "./.sites-runtime/tsconfig.tsbuildinfo"
   },
   "include": [
     "next-env.d.ts",
@@ -42,6 +43,9 @@
   ],
   "exclude": [
     "node_modules",
-    "examples"
+    "dist",
+    "runtime",
+    ".sites-runtime",
+    ".wrangler"
   ]
 }

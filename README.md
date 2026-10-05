@@ -5,6 +5,8 @@
 
 ## 本机使用
 
+双击项目根目录的 `启动控制台.cmd`，即可启动控制台并打开默认浏览器；重复启动会复用现有服务。启动失败时窗口会保留错误信息。脚本也支持传入 `--no-browser` 或 `--port 8766`。
+
 在本项目目录执行：
 
 ```powershell
@@ -56,7 +58,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schedule.ps1 -Action
 
 Responses 模式下的动画和整数题均默认使用流式请求，Chat Completions 保留非流式兼容路径。收到文本后每秒最多写入一次 SQLite，完成事件强制保存；运行中可查看已接收字符数。网络等待超时约束单次网络等待，不是整个生成任务的总时限。完成事件到达立即结束读取，连接中断保留已收到文本；停止本地进程不保证上游取消或停止计费。`generated` 只表示收到含 SVG 的完整 HTML，不代表视觉质量通过；接口失败、截断、格式错误独立记录。导出时只去除外围 Markdown 围栏，不修补模型作品。
 
-`.venv\Scripts\python.exe scripts/export_animation.py <run_id> --site` 从既有数据库导出 HTML 到 `runtime/artifacts/<run_id>/`，并生成脱敏的 `lib/animation-results.json`。导出不会调用模型。此 JSON 仅作为未同步时的初始快照。定时任务和 `sync` 会从 SQLite 自动同步动画到现有 D1 的独立展示行，无需重新发布网站。动画展示最多最近 12 轮、总计 900 KB；超过 120 KB 的单个 HTML 只展示元数据，原文件仍保存在本地证据中。发布后本机关机仍可浏览和下载已同步动画。
+`.venv\Scripts\python.exe scripts/export_animation.py <run_id>` 从既有数据库导出 HTML 和缩略图到 `runtime/artifacts/<run_id>/`，不会调用模型。网页从云端读取已同步结果，首次打开显示加载占位；加载失败可重试，不再使用源码中的旧静态快照。旧导出参数 `--site` 已移除；需要更新云端时执行独立的 `sync` 命令。定时任务和 `sync` 会从 SQLite 自动同步动画到现有 D1 的独立展示行，无需重新发布网站。动画展示最多最近 12 轮、总计 900 KB；超过 120 KB 的单个 HTML 只展示元数据，原文件仍保存在本地证据中。发布后本机关机仍可浏览和下载已同步动画。
 
 Site 的 `/animations` 提供结果卡片、隔离预览、重播、源码和 HTML 下载。预览禁止外部资源与网络请求；下载保留模型原稿。网站沿用现有访问权限。
 
@@ -72,6 +74,30 @@ node node_modules/eslint/bin/eslint.js . --ignore-pattern dist --ignore-pattern 
 ```
 
 Python 3.12+；网站依赖版本由现有 `package-lock.json` 固定。迁移验证见 `docs/migration.md`。
+
+## 目录与生成物
+
+日常入口是根目录的 `启动控制台.cmd`。Python 检测程序与公开网站放在同一个项目内，各自使用独立环境。
+
+| 路径 | 用途 |
+| --- | --- |
+| `lab_model_monitor/` | Python 检测、调度、存储、通知和本地控制台，含控制台静态资源 |
+| `app/`、`lib/`、`public/` | 公开网站页面、展示数据合同和静态资源 |
+| `db/`、`drizzle/` | Sites D1 展示副本的接口、表定义与迁移 |
+| `build/` | Sites 与 Vite 的构建适配源码；构建产物在 `dist/` |
+| `scripts/` | 控制台启动、计划任务、动画导出和网站环境工具 |
+| `tests/`、`configs/`、`docs/` | 回归测试、非敏感配置示例和项目文档 |
+| `runtime/` | 本机配置、凭据、唯一活动数据库、日志、原始动画文件与 QA/发布生成物，全部忽略提交 |
+| `.openai/hosting.json` | 现有站点身份与逻辑存储绑定 |
+
+未使用的 UI 组件库、示例页面、默认装饰图标和静态动画快照已退休。框架要求的配置文件仍放在根目录。
+
+生成物约定：
+
+- 截图、临时验证脚本和展示测试数据统一放在 `runtime/qa/`，不再新增根目录 `work/`。
+- 网站发布包使用 `runtime/releases/current-site.tar.gz`；发布前保留上一份为 `previous-site.tar.gz`。此次整理前的旧包已归档至 `runtime/releases/archive/`，不再新增根目录 `outputs/`。
+- `node_modules/`、`.venv/` 是开发依赖；`.sites-runtime/`、`.wrangler/`、`.next/`、`.vinext/` 和 `dist/` 是工具状态或可重建产物。TypeScript 增量缓存写入 `.sites-runtime/`。
+- `.wrangler/` 可含本地 D1 调试数据；`runtime/` 保存原始证据和运行配置，均不参与普通缓存清理。整理前的截图及小型缓存保存在 `runtime/qa/legacy-work/` 和 `runtime/qa/legacy-cache/`。
 
 ## 自动交付动画文件
 
