@@ -1,7 +1,29 @@
 # 实验室模型监测
 
-独立项目：`D:\Develop\MyApp\lab-model-monitor`。
-每天北京时间 15:00、20:00 检测 `gpt-6-astra` 和 `gpt-6.1-sol`。每个时段糖果测试各独立请求三次；动画每模型成功生成一次即停止，失败最多尝试三次。飞书沿用糖果摘要，Sites 自动同步两类结果。Python 后端只使用标准库，网站沿用原来的 Sites 项目和 D1 展示数据。
+独立的模型检测、本地控制台与公开展示网站。每天北京时间 15:00、20:00 检测 `gpt-6-astra` 和 `gpt-6.1-sol`。每个时段糖果测试各独立请求三次；动画每模型成功生成一次即停止，失败最多尝试三次。飞书沿用糖果摘要，Sites 自动同步两类结果。Python 后端只使用标准库，网站沿用原来的 Sites 项目和 D1 展示数据。
+
+公开展示：[糖果检测](https://kevin-lab-model-monitor.kevinjiang1018.chatgpt.site/) · [动画测试](https://kevin-lab-model-monitor.kevinjiang1018.chatgpt.site/animations)。
+
+## 首次安装
+
+本地控制台和计划任务面向 Windows。需要 Python 3.12+；开发网站还需要 Node.js 22.13+ 和 npm。
+
+```powershell
+git clone https://github.com/KevinJiang05/lab-model-monitor.git
+cd lab-model-monitor
+py -3 -m venv .venv
+```
+
+Python 无第三方运行依赖。随后双击 `启动控制台.cmd`，在控制台配置自己的模型端点、模型名、密钥和所需通知渠道，再启用检测计划。克隆仓库不会安装计划任务，也不包含本机配置、数据库或凭据。
+
+开发网站时，在项目目录执行：
+
+```powershell
+npm run install:ci
+npm run dev
+```
+
+本地网站默认地址 `http://127.0.0.1:5173/`。新环境没有同步数据时会显示空状态；GitHub 保存源码，线上结果仍由既有 Sites D1 提供。
 
 ## 本机使用
 
@@ -74,6 +96,21 @@ node node_modules/eslint/bin/eslint.js . --ignore-pattern dist --ignore-pattern 
 ```
 
 Python 3.12+；网站依赖版本由现有 `package-lock.json` 固定。迁移验证见 `docs/migration.md`。
+
+## Git 管理
+
+源码仓库：[KevinJiang05/lab-model-monitor](https://github.com/KevinJiang05/lab-model-monitor)。保留已有提交历史，日常修改继续在 `main` 上进行；GitHub 推送不会自动发布 Sites 或执行模型检测。
+
+提交前使用 `git status` 和 `git diff` 检查范围，按上述命令验证相关变更，并使用描述实际改动的提交信息。`runtime/`、`.venv/`、`node_modules/`、凭据文件及构建缓存均被忽略；仅提交源码、配置示例和文档。
+
+```powershell
+git status
+git diff
+# 用实际改动的文件路径替换下面的示例。
+git add README.md
+git commit -m "docs: update setup instructions"
+git push origin main
+```
 
 ## 目录与生成物
 
