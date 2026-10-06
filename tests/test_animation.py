@@ -96,6 +96,33 @@ class AnimationTests(unittest.TestCase):
         self.assertIsNone(extract_html(HTML[:-7]))
         self.assertIsNone(extract_html('<html><body>no svg</body></html>'))
 
+    def test_extraction_accepts_one_html_block_and_separately_checks_explanations(self):
+        for surround in ('这里是完整 HTML：\n```html\n' + HTML + '\n```',
+                         '```HTML\r\n' + HTML + '\r\n```\r\n运行方法：打开此文件。'):
+            self.assertEqual(extract_html(surround), HTML)
+            self.assertIsNone(extract_html(surround, strict=True))
+        self.assertEqual(extract_html(HTML, strict=True), HTML)
+        self.assertEqual(extract_html('```html\n' + HTML + '\n```', strict=True), HTML)
+        self.assertIsNone(extract_html('```html\n' + HTML + '\n```\n```html\n' + HTML + '\n```'))
+        self.assertIsNone(extract_html('说明\n```html\n' + HTML[:-7] + '\n```'))
+        self.assertIsNone(extract_html('说明\n```html\n' + HTML))
+
+    def test_historical_format_error_is_previewable_without_promoting_failed_streams(self):
+        raw = '这是完整 HTML：\n```html\n' + HTML + '\n```'
+        samples = [{'requested_model': 'model', 'status': status, 'response_text': raw}
+                   for status in ('format_error', 'incomplete', 'api_error', 'timeout')]
+        run = self.saved_run(0, samples)
+        with tempfile.TemporaryDirectory() as directory:
+            store = RunStore(Path(directory) / 'db.sqlite')
+            store.import_run(run)
+            before = store.get(run['run_id'])
+            display = projection(before)['samples']
+            self.assertEqual(display[0]['html'], HTML)
+            self.assertEqual(display[0]['status'], 'format_error')
+            self.assertEqual(display[0]['format_note'], 'extra_text')
+            self.assertTrue(all(s['html'] is None and s['format_note'] is None for s in display[1:]))
+            self.assertEqual(store.get(run['run_id']), before)
+
     def test_reuses_runner_once_per_model_and_keeps_candy_and_delivery_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

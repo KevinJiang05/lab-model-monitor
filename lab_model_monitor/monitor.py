@@ -228,7 +228,9 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
                         elif response.completion_status not in {"", "completed", "stop"}:
                             sample.update(status="incomplete", error=f"Response status: {response.completion_status}")
                         elif animation_test:
-                            sample["status"] = "generated" if animation.extract_html(response.text) else "format_error"
+                            html = animation.extract_html(response.text)
+                            sample.update(status="generated" if html else "format_error",
+                                format_note="extra_text" if html and animation.extract_html(response.text, strict=True) is None else None)
                         else:
                             sample["status"], sample["answer"] = grade_integer_answer(response.text, test["expected_answer"])
                     except GPTAPIError as exc:

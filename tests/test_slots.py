@@ -67,6 +67,19 @@ class SlotTests(unittest.TestCase):
         self.assertEqual(self.run_slot(7, True, request)['status'], 'already_run')
         self.assertEqual(len(calls), 6)
 
+    def test_complete_html_with_explanation_stops_retries_and_keeps_original_response(self):
+        raw = '以下是完整 HTML：\n```html\n' + HTML + '\n```'
+        calls = []
+        def request(*args):
+            calls.append(1)
+            return {'output_text': raw, 'status': 'completed'}
+        result = self.run_slot(7, True, request)
+        self.assertTrue(result['success'])
+        self.assertEqual(len(calls), 2)  # One request per model, despite extra text.
+        samples = self.store.get(result['run_id'])['samples']
+        self.assertTrue(all(s['status'] == 'generated' and s['format_note'] == 'extra_text' for s in samples))
+        self.assertTrue(all(s['response_text'] == raw and s['attempt'] == 1 for s in samples))
+
     def test_cli_runs_animation_even_when_candy_fails_and_reuses_slot_timestamp(self):
         from lab_model_monitor.__main__ import main
         with patch('sys.argv', ['monitor', 'scheduled-run']), patch('lab_model_monitor.__main__.RunStore', return_value=self.store), \

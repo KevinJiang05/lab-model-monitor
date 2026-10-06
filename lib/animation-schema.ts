@@ -13,6 +13,7 @@ export const animationRunSchema = z.object({
     requested_at: z.string().datetime({ offset: true }).nullable().optional(),
     attempt: z.number().int().min(1).max(3).nullable().optional(),
     status: z.enum(["generated", "incomplete", "format_error", "timeout", "api_error"]),
+    format_note: z.literal("extra_text").nullable().optional(),
     elapsed_seconds: z.number().finite().min(0),
     input_tokens: z.number().int().min(0).nullable(), output_tokens: z.number().int().min(0).nullable(),
     total_tokens: z.number().int().min(0).nullable(), completion_status: z.string().max(100),

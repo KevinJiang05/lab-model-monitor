@@ -13,12 +13,21 @@ MAX_SITE_RUNS = 20
 MAX_SITE_RUN_BYTES = 1_500_000
 
 
-def extract_html(text: str) -> str | None:
-    """Remove only an enclosing Markdown fence; never repair the model output."""
+def extract_html(text: str, *, strict: bool = False) -> str | None:
+    """Extract one complete HTML file without repairing its contents.
+
+    Strict mode also checks the original no-explanation delivery requirement.
+    """
     source = text.strip()
-    fenced = re.fullmatch(r"```(?:html)?\s*\n([\s\S]*?)\n```", source, re.I)
-    if fenced:
-        source = fenced[1].strip()
+    if not re.match(r"(?:<!doctype\s+html[^>]*>\s*)?<html\b", source, re.I):
+        fence = r"```(?:html)?[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*"
+        fence_count = len(re.findall(r"(?m)^```", source))
+        fenced = re.fullmatch(fence, source, re.I) if fence_count == 2 else None
+        if not fenced and not strict and fence_count == 2:
+            # Explanatory text is permitted only around one unambiguous code block.
+            fenced = re.search(r"^" + fence + r"(?=\r?$)", source, re.I | re.M)
+        if fenced:
+            source = fenced[1].strip()
     if (len(source.encode("utf-8")) > MAX_HTML_BYTES
             or not re.match(r"(?:<!doctype\s+html[^>]*>\s*)?<html\b", source, re.I)
             or not re.search(r"</html>\s*$", source, re.I)
@@ -32,11 +41,14 @@ def projection(run: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Not an animation run")
     samples = []
     for sample in run["samples"]:
-        html = extract_html(sample["response_text"]) if sample["status"] == "generated" else None
+        # Recover display artifacts from historical format errors without rewriting
+        # the original status, response, IDs, timestamps or run result in SQLite.
+        html = extract_html(sample["response_text"]) if sample["status"] in {"generated", "format_error"} else None
         samples.append({
             **{key: sample.get(key) for key in ("requested_model", "returned_model", "status",
                 "requested_at", "attempt", "elapsed_seconds", "input_tokens", "output_tokens", "total_tokens", "completion_status")},
             "html": html,
+            "format_note": "extra_text" if html and extract_html(sample["response_text"], strict=True) is None else None,
             "sha256": hashlib.sha256(html.encode("utf-8")).hexdigest() if html else None,
             "http_status": next(iter(re.findall(r"HTTP(?:Error)?\s*[: ]?\s*([45]\d\d)\b", str(sample.get("error") or ""), re.I)), None),
         })
