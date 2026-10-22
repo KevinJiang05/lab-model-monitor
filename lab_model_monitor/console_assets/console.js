@@ -6,6 +6,7 @@ const names = {
   success: "已完成", failed: "存在异常", running: "运行中", passed: "通过",
   wrong_answer: "答错", format_error: "格式错误", timeout: "超时", api_error: "接口失败",
   incomplete: "回答截断", generated: "HTML 已生成（未视觉评分）", Ready: "等待运行", Disabled: "已暂停", Running: "运行中",
+  cancelled: "已停止",
   not_installed: "未安装", unavailable: "无法读取", unsupported: "不支持",
 };
 let state, dirty = false, saving = false, pendingAction = false;
@@ -99,9 +100,11 @@ function editState() {
   $("feishu-summary").textContent = $("feishu-enabled").checked ? "已启用" : "已停用";
   $("site-summary").textContent = $("site-url").value.trim() ? "已配置" : "已停用";
   const blocked = state.busy || saving || pendingAction;
-  for (const id of ["save", "run", "sync", "models-action"]) {
-    $(id).disabled = blocked || (id !== "save" && dirty) || (id === "run" || id === "models-action") && !state.credentials.api_key.configured;
+  for (const id of ["save", "run", "animation", "run-all", "sync", "models-action"]) {
+    $(id).disabled = blocked || (id !== "save" && dirty) || ["run", "animation", "run-all", "models-action"].includes(id) && !state.credentials.api_key.configured;
   }
+  $("schedule-toggle").disabled = saving || pendingAction;
+  $("stop").disabled = pendingAction || Boolean(state.job.stop_requested);
   $("save").textContent = saving ? "保存中…" : "保存并应用";
 }
 
@@ -179,11 +182,12 @@ function render() {
   const s = state.settings, latest = state.runs[0], scheduler = state.scheduler;
   $("daily-status").textContent = s.schedule.enabled ? (s.schedule.daily_times?.length ? s.schedule.daily_times : [s.schedule.daily_time]).join(" / ") : "已暂停";
   $("daily-detail").textContent = "北京时间 · 糖果 " + s.schedule.attempts_per_model + " 次 · 动画成功 1 次（最多 3 次）";
+  $("schedule-toggle").textContent = s.schedule.enabled ? "暂停自动检测" : "开启自动检测";
   $("task-status").textContent = names[scheduler.state] || scheduler.state;
   $("next-run").textContent = scheduler.state === "Ready" && scheduler.next_run ? "下次 " + scheduler.next_run.replace("T", " ") : "LabModelMonitor-Daily";
   $("key-status").textContent = state.credentials.api_key.configured ? "已配置" : "待配置";
   $("model-count").textContent = s.schedule.models.length + " 个模型 · " + s.api.api_mode;
-  $("latest-status").textContent = latest ? names[latest.status] || latest.status : "暂无记录";
+  $("latest-status").textContent = latest ? latest.cancelled ? "已停止" : names[latest.status] || latest.status : "暂无记录";
   $("latest-time").textContent = latest ? date(latest.created_at) : "—";
   $("overview-test").textContent = state.standard_test ? "糖果题 · 答案 21" : "自定义题 · 答案 " + s.test.expected_answer;
   $("overview-models").textContent = s.schedule.models.join("、");
@@ -194,19 +198,28 @@ function render() {
     el.textContent = value.configured ? value.source === "environment" ? "环境变量" : "已配置" : "未配置";
     el.className = "credential-state" + (value.configured ? "" : " missing");
   });
-  $("run").textContent = "立即检测 · " + s.schedule.models.length * s.schedule.attempts_per_model + " 次";
+  $("run").textContent = (state.standard_test ? "糖果检测" : "整数题检测") + " · " + s.schedule.models.length * s.schedule.attempts_per_model + " 次";
+  $("animation").textContent = "动画检测 · " + s.schedule.models.length + " 次";
+  $("run-all").textContent = "两项一起 · 最多 " + s.schedule.models.length * (s.schedule.attempts_per_model + 3) + " 次";
   $("run-count").textContent = state.runs.length;
   const job = state.job, jobEl = $("job-status");
   jobEl.hidden = !state.busy && job.state === "idle";
   jobEl.className = "job-status" + (job.state === "failed" ? " failed" : "");
-  const action = {run: "检测", sync: "同步", models: "连接测试"}[job.action] || "操作";
+  const action = {run: "整数题检测", animation: "动画检测", "run-all": "两项检测", sync: "同步", models: "连接测试"}[job.action] || "外部任务";
+  const canStop = job.state === "running" && ["run", "animation", "run-all"].includes(job.action);
+  $("stop").hidden = !canStop;
+  $("stop-note").hidden = !state.busy;
+  $("stop-note").textContent = canStop ? "停止会保留已收到的回答，并停止后续模型请求；需等当前网络读取返回，无法保证中转或上游停止计费。" : "当前任务由计划任务或其他操作管理；可暂停后续自动计划，当前操作继续运行。";
   if (state.busy) {
-    const active = state.runs.find((run) => run.status === "running");
-    jobEl.textContent = action + "运行中" + (active ? " · 已记录 " + active.sample_count + " 个样本" : "");
+    const active = state.runs.filter((run) => run.status === "running");
+    const characters = active.flatMap(run => run.models).reduce((sum, model) => sum + model.received_characters, 0);
+    jobEl.textContent = job.stop_requested ? "正在停止 · 等待当前网络读取返回，后续请求不会启动" : action + "运行中" + (active.length ? " · 已记录 " + active.reduce((sum, run) => sum + run.sample_count, 0) + " 个样本 · 已接收 " + characters.toLocaleString() + " 字符" : "");
   } else if (job.state === "success") {
     jobEl.textContent = action + "已完成 · " + date(job.ended_at);
   } else if (job.state === "failed") {
     jobEl.textContent = action + "存在异常" + (job.result?.http_status ? " · HTTP " + job.result.http_status : "") + "，详情见运行记录。";
+  } else if (job.state === "cancelled") {
+    jobEl.textContent = "本轮已在本地停止；已收到的回答保留，未自动补测。";
   }
   if (job.id && job.id !== completedJob && job.state !== "running") {
     completedJob = job.id;
@@ -232,7 +245,7 @@ function renderRuns() {
     const item = node("details", undefined, "run-card");
     item.dataset.id = run.run_id;
     const summary = node("summary"), heading = node("div", undefined, "run-heading"), label = node("div");
-    heading.append(node("span", names[run.status] || run.status, "status " + run.status));
+    heading.append(node("span", run.cancelled ? "已停止" : names[run.status] || run.status, "status " + (run.cancelled ? "cancelled" : run.status)));
     const animation = run.contract.prompt_version === "sheep-submarine-html-v1";
     label.append(node("strong", date(run.created_at)), node("span", (animation ? "动画生成 · SVG HTML" : (run.contract.prompt_version === "candy-shape-selection-v1" ? "糖果题" : "自定义题") + " · 答案 " + run.contract.expected_answer) + " · " + ({manual: "手动", scheduled: "定时", imported: "导入"}[run.origin] || run.origin)));
     heading.append(label);
@@ -261,16 +274,24 @@ function renderRuns() {
 
 function displayDetail(content, run) {
   content.replaceChildren();
-  const deliveries = Object.entries(run.delivery).map(([name, result]) => ({site: "看板", feishu: "飞书"}[name] || name) + "：" + (result.success ? "成功" : "未完成") + "（" + (result.status || "—") + "）");
+  const deliveries = Object.entries(run.delivery).map(([name, result]) => ({site: "看板同步", feishu: "飞书", artifacts: "动画文件"}[name] || name) + "：" + (result.success ? "成功" : "未完成") + (result.http_status ? " · HTTP " + result.http_status : "") + (result.status ? "（" + result.status + "）" : ""));
   if (deliveries.length) content.append(node("p", deliveries.join(" · "), "run-meta"));
+  for (const artifact of run.delivery.artifacts?.samples || []) {
+    if (artifact.thumbnail === "failed") content.append(node("p", artifact.model + " · 缩略图未生成" + (artifact.error_type === "PermissionError" ? "：权限不足或临时浏览器文件被占用" : "；文件处理异常") + "。可同步已有结果重试，不会重跑模型。", "diagnosis"));
+  }
   const method = node("details", undefined, "run-extra");
   method.append(node("summary", "题面与参数"), node("p", "ID " + run.run_id + "\nSHA256 " + run.contract.prompt_sha256 + "\n" + run.contract.api_mode + " · " + run.contract.reasoning_effort + " · " + run.contract.max_output_tokens + " Token · " + run.contract.timeout_seconds + " 秒", "run-meta"));
   if (run.method) method.append(node("pre", run.method.instructions + "\n\n" + run.method.prompt));
   content.append(method);
   for (const sample of run.samples) {
     const item = node("details", undefined, "sample"), title = node("summary");
-    title.append(node("span", sample.requested_model + " · 第 " + sample.attempt + " 次", "sample-title"), node("span", names[sample.status] || sample.status, "status " + sample.status), node("span", (run.contract.prompt_version === "sheep-submarine-html-v1" ? "HTML" : "答案 " + (sample.answer ?? "—")) + " · " + (sample.elapsed_seconds ?? "—") + " 秒" + (sample.http_status ? " · HTTP " + sample.http_status : ""), "sample-info"));
-    item.append(title, node("p", "Token " + (sample.total_tokens ?? "未提供") + (sample.returned_model ? " · 返回模型 " + sample.returned_model : ""), "sample-info secondary-info"), node("pre", sample.response_text || "无文本回答"));
+    const cancelled = sample.completion_status === "client_cancelled";
+    title.append(node("span", sample.requested_model + " · 第 " + sample.attempt + " 次", "sample-title"), node("span", cancelled ? "本地停止" : names[sample.status] || sample.status, "status " + (cancelled ? "cancelled" : sample.status)), node("span", (run.contract.prompt_version === "sheep-submarine-html-v1" ? "HTML" : "答案 " + (sample.answer ?? "—")) + " · " + (sample.elapsed_seconds ?? "—") + " 秒" + (sample.http_status ? " · HTTP " + sample.http_status : ""), "sample-info"));
+    item.append(title);
+    if (sample.diagnosis) item.append(node("p", sample.diagnosis, "diagnosis"));
+    item.append(node("p", "Token " + (sample.total_tokens ?? "未提供") + " · 已接收 " + (sample.received_characters ?? sample.response_text?.length ?? 0) + " 字符" + (sample.returned_model ? " · 返回模型 " + sample.returned_model : ""), "sample-info secondary-info"));
+    if (sample.completion_status || sample.last_event) item.append(node("p", "响应状态：" + (sample.completion_status || "未返回") + " · 最后事件：" + (sample.last_event || "未收到") + (sample.last_event_at ? " · " + date(sample.last_event_at) : ""), "run-meta sample-meta"));
+    item.append(node("pre", sample.response_text || "无文本回答"));
     content.append(item);
   }
   if (!run.samples.length) content.append(node("p", "尚无已完成样本。", "run-meta"));
@@ -357,7 +378,7 @@ $("latest-details").addEventListener("click", () => {
   const latest = $("runs").querySelector(".run-card");
   if (latest) latest.open = true;
 });
-for (const [id, action] of [["run", "run"], ["sync", "sync"], ["models-action", "models"]]) {
+for (const [id, action] of [["run", "run"], ["animation", "animation"], ["run-all", "run-all"], ["stop", "stop"], ["sync", "sync"], ["models-action", "models"]]) {
   $(id).addEventListener("click", async () => {
     pendingAction = true;
     editState();
@@ -366,6 +387,18 @@ for (const [id, action] of [["run", "run"], ["sync", "sync"], ["models-action", 
     finally { pendingAction = false; editState(); }
   });
 }
+$("schedule-toggle").addEventListener("click", async () => {
+  if (!state || saving || pendingAction) return;
+  pendingAction = true;
+  editState();
+  try {
+    state = await api("/api/schedule", {enabled: !state.settings.schedule.enabled});
+    $("enabled").checked = state.settings.schedule.enabled;
+    render();
+    notice(state.settings.schedule.enabled ? "自动监测已开启。" : "后续自动计划已暂停；当前运行不会被取消。");
+  } catch (error) { notice(error.message, true); }
+  finally { pendingAction = false; editState(); }
+});
 $("refresh").addEventListener("click", () => refresh());
 $("close-notice").addEventListener("click", () => { $("notice").hidden = true; });
 window.addEventListener("keydown", (event) => {

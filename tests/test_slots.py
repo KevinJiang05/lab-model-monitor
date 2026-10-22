@@ -114,6 +114,29 @@ class SlotTests(unittest.TestCase):
         self.assertEqual({k['animation_test'] for k in seen}, {True, False})
         self.assertEqual(len({k['lock_path'] for k in seen}), 2)
 
+    def test_cancelled_pair_does_not_export_notify_sync_or_rerun(self):
+        from lab_model_monitor.__main__ import execute_command
+        from threading import Event
+        stopped = Event()
+        calls = []
+        def runner(**kwargs):
+            calls.append(kwargs)
+            stopped.set()
+            return {'success': False, 'status': 'cancelled'}
+        with patch('lab_model_monitor.__main__.RunStore', return_value=self.store), \
+             patch('lab_model_monitor.__main__.load_settings', return_value=self.settings), \
+             patch('lab_model_monitor.__main__.load_credentials', return_value={'api_key': 'fake'}), \
+             patch('lab_model_monitor.__main__.STATE', self.root), \
+             patch('lab_model_monitor.__main__.run_monitor', side_effect=runner), \
+             patch('lab_model_monitor.__main__.deliver') as delivery, \
+             patch('lab_model_monitor.artifacts.prepare_run') as export:
+            result = execute_command('run-all', stop_event=stopped)
+        self.assertEqual(result['status'], 'cancelled')
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(call['stop_event'] is stopped for call in calls))
+        delivery.assert_not_called()
+        export.assert_not_called()
+
     def test_parallel_lanes_do_not_finalize_each_others_running_evidence(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Barrier

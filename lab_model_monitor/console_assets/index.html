@@ -23,13 +23,16 @@
     <div id="notice" class="notice" role="status" aria-live="polite" hidden><span id="notice-message"></span><button id="close-notice" type="button" aria-label="关闭提示">×</button></div>
     <div id="job-status" class="job-status" role="status" hidden></div>
     <section id="panel-overview" data-panel="overview" role="tabpanel" aria-labelledby="tab-overview">
+      <div class="monitor-control"><div><h1>自动监测</h1><p class="muted">开关只影响后续计划；关闭浏览器不会暂停监测。</p></div><button id="schedule-toggle" type="button" class="button secondary" disabled>读取计划…</button></div>
       <div class="status-strip" aria-label="运行状态">
         <div><span>每日检测</span><strong id="daily-status">加载中</strong><small id="daily-detail">UTC+8</small></div>
         <div><span>计划任务</span><strong id="task-status">—</strong><small id="next-run">—</small></div>
         <div><span>模型 API</span><strong id="key-status">—</strong><small id="model-count">—</small></div>
         <div><span>最近一轮</span><strong id="latest-status">—</strong><small id="latest-time">—</small></div>
       </div>
-      <div class="operation-bar"><div class="action-buttons"><button id="run" type="button" class="button primary" disabled>立即检测</button><button id="sync" type="button" class="button secondary" disabled>同步结果</button></div><span class="muted">检测调用模型；同步重试已有结果的汇报。</span></div>
+      <div class="operation-bar"><div class="action-buttons"><button id="run" type="button" class="button primary" disabled>糖果检测</button><button id="animation" type="button" class="button secondary" disabled>动画检测</button><button id="run-all" type="button" class="button secondary" disabled>两项一起</button><button id="sync" type="button" class="button secondary" disabled>同步结果</button><button id="stop" type="button" class="button danger" hidden>停止本轮</button></div></div>
+      <p class="operation-note muted" id="operation-note">检测会调用模型；同步只处理已有结果，不补测模型。</p>
+      <p class="operation-note muted" id="stop-note" hidden></p>
       <section class="card"><div class="card-heading"><h1>最近结果</h1><button id="latest-details" type="button" class="button quiet" disabled>查看样本 →</button></div><div id="latest-models"></div></section>
       <div class="saved-summary"><span id="overview-test">—</span><span id="overview-models">—</span><button type="button" class="text-button" data-goto="detection">修改设置</button></div>
     </section>
@@ -39,10 +42,11 @@
           <div class="card-heading"><h1>计划与模型</h1><label class="toggle"><input id="enabled" type="checkbox">每日自动检测</label></div>
           <div class="fields three">
             <label>运行时间 <span class="hint">北京时间，逗号分隔</span><input id="daily-time" type="text" placeholder="15:00, 20:00" required></label>
-            <label>每个模型采样次数<input id="attempts" type="number" min="1" max="5" required></label>
+            <label>糖果题每模型采样次数<input id="attempts" type="number" min="1" max="5" required></label>
             <div class="field-help">定时运行需要电脑开机且用户已登录。暂停后仍可手动检测。</div>
           </div>
           <label class="last-field">检测模型 <span class="hint">每行一个，最多 10 个</span><textarea id="models" rows="3" required maxlength="2010" spellcheck="false"></textarea></label>
+          <p class="field-note">动画单独手动运行时每模型一次；定时或“两项一起”最多三次，交付完整 HTML 后停止重试。</p>
         </section>
         <details class="card disclosure" id="advanced-settings">
           <summary><h2>推理参数</h2><span id="advanced-summary" class="muted">—</span></summary>

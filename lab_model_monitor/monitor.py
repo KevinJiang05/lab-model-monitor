@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
+from threading import Event
 from typing import Any, Iterator
 
 from .client import GPTAPIError, GPTClientConfig, JsonRequester, OpenAICompatibleClient
@@ -136,11 +137,15 @@ def summarize(samples: list[dict[str, Any]], contract: dict[str, Any], store: Ru
     return summaries
 
 
+class RunCancelled(Exception):
+    """Stop locally without treating an unfinished answer as wrong."""
+
+
 def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str, str] | None = None,
                 store: RunStore | None = None, requester: JsonRequester | None = None,
                 scheduled: bool = False, lock_path: Path | None = None,
                 now: datetime | None = None, animation_test: bool = False,
-                animation_attempts: int | None = None) -> dict[str, Any]:
+                animation_attempts: int | None = None, stop_event: Event | None = None) -> dict[str, Any]:
     animation_limit = animation_attempts if animation_attempts is not None else (3 if scheduled else 1)
     if type(animation_limit) is not int or not 1 <= animation_limit <= 3:
         raise ValueError("Animation attempts must be 1 to 3.")
@@ -193,6 +198,8 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
         try:
             for attempt in range(1, (animation_limit if animation_test else schedule.attempts_per_model) + 1):
                 for model in schedule.models:
+                    if stop_event is not None and stop_event.is_set():
+                        raise RunCancelled()
                     if animation_test and any(s["requested_model"] == model and s["status"] == "generated" for s in samples):
                         continue
                     started = perf_counter()
@@ -211,6 +218,8 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
                         if update.get("terminal") or perf_counter() - saved_at >= 1:
                             store.save_samples(identity, samples)
                             saved_at = perf_counter()
+                        if stop_event is not None and stop_event.is_set() and not update.get("terminal"):
+                            raise RunCancelled()
                     try:
                         client = OpenAICompatibleClient(api_key=credentials["api_key"],
                             config=GPTClientConfig.from_mapping({**settings["api"], "model": model,
@@ -250,6 +259,14 @@ def run_monitor(*, settings: dict[str, Any] | None = None, credentials: dict[str
                                  if animation_test else summarize(samples, contract, store))}
             result["notification_summary"] = "" if animation_test else monitor_notification_summary(result)
             store.finish(identity, result)
+        except RunCancelled:
+            for partial in samples:
+                if partial.get("status") == "running":
+                    partial.update(status="incomplete", completion_status="client_cancelled",
+                                   error="Stopped locally; upstream cancellation is not confirmed.")
+            store.finish(identity, {"success": False, "cancelled": True, "contract": contract, "method": test,
+                                   "samples": samples, "models": [], "notification_summary": "本轮已在本地停止；已收到的回答保留，未自动补测。"})
+            return {"success": False, "status": "cancelled", "run_id": identity}
         except BaseException:
             for partial in samples:
                 if partial.get("status") == "running":

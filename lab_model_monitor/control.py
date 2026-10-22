@@ -6,7 +6,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -22,6 +21,34 @@ from .store import RunStore
 
 class BusyError(RuntimeError):
     pass
+
+
+def sample_diagnosis(sample: dict[str, Any], http_status: int | None) -> str | None:
+    """Explain known failure states without exposing arbitrary provider error text."""
+    status, completion = sample.get("status"), sample.get("completion_status")
+    if completion == "client_cancelled":
+        return "本轮已在本地停止；已收到的内容保留，上游是否停止或继续计费无法确认。"
+    if completion == "client_interrupted":
+        return "本地进程中断，未确认上游是否取消；本轮未自动补测。"
+    if http_status:
+        if http_status >= 500:
+            return f"HTTP {http_status}：服务链路返回错误；仅凭客户端无法区分中转站与上游。"
+        if http_status == 429:
+            return "HTTP 429：请求受到限流或额度限制。"
+        if http_status in {401, 403}:
+            return f"HTTP {http_status}：请求被拒绝，请检查访问权限与模型配置。"
+        return f"HTTP {http_status}：接口拒绝请求。"
+    if status == "timeout":
+        return "网络等待超时；此设置限制等待数据的时间，不是整次生成的总时长。"
+    if status == "api_error":
+        if completion == "failed" or sample.get("last_event") in {"error", "response.failed"}:
+            return "收到服务端失败事件，未完成交付；已收到的内容保留。"
+        return "接口连接或响应异常，未获得完整交付；未据此判定模型答错。"
+    if status == "incomplete":
+        return "未收到完整交付；流可能提前结束，或服务端报告输出未完成。"
+    if status == "format_error":
+        return "原始回答未满足本轮交付格式，详细内容见下方原始响应。"
+    return None
 
 
 @contextmanager
@@ -76,6 +103,7 @@ def public_run(run: dict[str, Any], *, detailed: bool = False) -> dict[str, Any]
                        "usage_complete": all(sample.get("total_tokens") is not None for sample in samples)})
     result["models"] = models
     result["sample_count"] = len(run["samples"])
+    result["cancelled"] = bool(run["result"].get("cancelled"))
     if detailed:
         method = run["result"].get("method")
         if method is None and run["contract"].get("prompt_sha256") == CANDY_PROMPT_SHA256:
@@ -88,6 +116,8 @@ def public_run(run: dict[str, Any], *, detailed: bool = False) -> dict[str, Any]
                 "elapsed_seconds", "response_text", "total_tokens", "completion_status", "last_event_at", "last_event", "stream_event_count")}
             http = re.search(r"HTTP(?:Error)?\s*[: ]?\s*([45]\d\d)\b", str(sample.get("error") or ""), re.I)
             item["http_status"] = int(http.group(1)) if http else None
+            item["diagnosis"] = sample_diagnosis(sample, item["http_status"])
+            item["received_characters"] = len(sample.get("response_text") or "")
             result["samples"].append(item)
     return result
 
@@ -100,6 +130,7 @@ class ControlService:
         self.scheduler_guard = threading.Lock()
         self.schedule_cache: tuple[float, dict[str, Any]] | None = None
         self.job: dict[str, Any] = {"state": "idle"}
+        self.stop_event = threading.Event()
 
     def schedule_status(self, *, refresh: bool = False) -> dict[str, Any]:
         with self.scheduler_guard:
@@ -181,17 +212,46 @@ class ControlService:
                 self.schedule_cache = None
         return self.snapshot()
 
+    def set_schedule_enabled(self, enabled: bool) -> dict[str, Any]:
+        if type(enabled) is not bool:
+            raise ValueError("Enabled must be a boolean.")
+        # Only change future scheduling. Active runs already hold their settings.
+        with self.guard:
+            previous = config.load_settings()
+            settings = {**previous, "schedule": {**previous["schedule"], "enabled": enabled}}
+            if enabled and not config.configuration_readiness(settings):
+                raise ValueError("Required credentials are missing.")
+            try:
+                config.write_json(config.STATE / "settings.json", settings)
+                self.scheduler.apply(settings)
+            except Exception:
+                config.write_json(config.STATE / "settings.json", previous)
+                self.scheduler.apply(previous)
+                self.schedule_cache = None
+                raise
+            self.schedule_cache = None
+        return self.snapshot()
+
+    def stop(self) -> dict[str, Any]:
+        with self.guard:
+            if self.job.get("state") != "running" or self.job.get("action") not in {"run", "animation", "run-all"}:
+                raise ValueError("No console detection is running.")
+            self.stop_event.set()
+            self.job["stop_requested"] = True
+            return dict(self.job)
+
     def start(self, action: str) -> dict[str, Any]:
-        if action not in {"run", "sync", "models"}:
+        if action not in {"run", "animation", "run-all", "sync", "models"}:
             raise ValueError("Unknown control action.")
         with self.guard:
             if self.job["state"] == "running":
                 raise BusyError("A control operation is running.")
             with job_guard():
                 pass
-            if action == "run" and not config.credential_status()["api"]:
+            if action in {"run", "animation", "run-all"} and not config.credential_status()["api"]:
                 raise ValueError("Model API key is not configured.")
             identity = str(uuid4())
+            self.stop_event = threading.Event()
             self.job = {"id": identity, "action": action, "state": "running", "started_at": datetime.now(UTC).isoformat()}
             threading.Thread(target=self._worker, args=(identity, action), daemon=True).start()
             return dict(self.job)
@@ -206,7 +266,7 @@ class ControlService:
                     result = {"success": True, "models": client.list_models()}
             else:
                 result = self._cli(action)
-            state = "success" if result.get("success") else "failed"
+            state = "cancelled" if result.get("status") == "cancelled" else "success" if result.get("success") else "failed"
         except GPTAPIError as exc:
             http = re.search(r"HTTP\s+(\d{3})", str(exc))
             result = {"success": False, "status": "api_error", "http_status": int(http.group(1)) if http else None}
@@ -218,9 +278,6 @@ class ControlService:
             if self.job.get("id") == identity:
                 self.job.update(state=state, result=result, ended_at=datetime.now(UTC).isoformat())
 
-    @staticmethod
-    def _cli(action: str) -> dict[str, Any]:
-        result = subprocess.run([sys.executable, "-X", "utf8", "-m", "lab_model_monitor", action],
-            cwd=config.ROOT, capture_output=True, encoding="utf-8", errors="replace",
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-        return json.loads(result.stdout)
+    def _cli(self, action: str) -> dict[str, Any]:
+        from .__main__ import execute_command
+        return execute_command(action, stop_event=self.stop_event)

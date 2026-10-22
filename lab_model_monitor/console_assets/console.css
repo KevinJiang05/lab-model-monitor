@@ -126,6 +126,14 @@ input[type=checkbox] { width: 15px; height: 15px; margin: 0; flex-shrink: 0; acc
 .sample pre { margin: 0 12px 12px; }
 pre { white-space: pre-wrap; word-break: break-word; background: #f5f7fa; padding: 12px; border-radius: 3px; font-size: 12px; line-height: 1.7; max-height: 400px; overflow: auto; }
 .empty { padding: 25px 12px; color: var(--muted); font-size: 12px; text-align: center; }
+.monitor-control { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.monitor-control h1 { font-size: 20px; margin: 0 0 5px; }
+.monitor-control p { margin: 0; font-size: 12px; }
+.operation-bar .action-buttons { flex-wrap: wrap; }
+.operation-note { font-size: 12px; line-height: 1.7; margin: 8px 0 14px; }
+.button.danger { color: #9d5137; border-color: #dfb6a6; background: #fff8f4; }
+.diagnosis { margin: 10px 12px; padding: 9px 12px; background: #fff7ec; color: #88532e; border-left: 2px solid #dcaa6a; font-size: 12px; line-height: 1.7; }
+.sample-meta { margin-left: 12px; margin-right: 12px; }
 @media (max-width: 760px) {
   .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .status-strip > div:nth-child(2) { border-right: 0; }

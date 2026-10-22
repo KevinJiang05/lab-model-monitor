@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lab_model_monitor import config
-from lab_model_monitor.client import GPTAPIError, OpenAICompatibleClient
+from lab_model_monitor.client import GPTAPIError, GPTResponse, OpenAICompatibleClient
 from lab_model_monitor.console import MAX_REQUEST, make_server
 from lab_model_monitor.control import BusyError, ControlService, WindowsScheduler, public_run
 from lab_model_monitor.delivery import send_feishu
@@ -140,6 +140,101 @@ class ConsoleTests(unittest.TestCase):
         self.scheduler.state = "not_installed"
         self.service.save({"settings": self.settings})
         self.assertEqual(self.scheduler.state, "Ready")
+
+    def test_quick_pause_changes_only_saved_schedule_even_during_operation(self):
+        self.settings['schedule']['enabled'] = True
+        config.write_json(self.root / 'settings.json', self.settings)
+        self.service.job = {'id': 'active', 'state': 'running', 'action': 'animation'}
+        with execution_lock(self.root / 'job.lock'):
+            result = self.service.set_schedule_enabled(False)
+        self.assertFalse(result['settings']['schedule']['enabled'])
+        self.assertEqual(result['scheduler']['state'], 'Disabled')
+        expected = copy.deepcopy(self.settings)
+        expected['schedule']['enabled'] = False
+        self.assertEqual(config.load_settings(), expected)
+        self.assertFalse(self.service.stop_event.is_set())
+        with self.assertRaises(ValueError):
+            self.service.set_schedule_enabled('false')
+
+    def test_quick_schedule_failure_restores_previous_intent(self):
+        previous = config.load_settings()
+        self.scheduler.fail_next = True
+        with self.assertRaises(RuntimeError):
+            self.service.set_schedule_enabled(True)
+        self.assertEqual(config.load_settings(), previous)
+        self.assertEqual(self.scheduler.state, 'Disabled')
+
+    def test_console_routes_all_manual_actions_to_shared_runner(self):
+        for action in ('run', 'animation', 'run-all', 'sync'):
+            self.service.job = {'id': action, 'state': 'running', 'action': action}
+            with patch('lab_model_monitor.__main__.execute_command', return_value={'success': True}) as command:
+                self.service._worker(action, action)
+            command.assert_called_once_with(action, stop_event=self.service.stop_event)
+            self.assertEqual(self.service.job['state'], 'success')
+
+    def test_stop_preserves_stream_evidence_and_prevents_further_samples(self):
+        calls = []
+        self.service.job = {'id': 'owned', 'state': 'running', 'action': 'run'}
+        def generate(**kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                return GPTResponse(text='21', model='m1', response_id='first', completion_status='completed')
+            self.service.stop()
+            kwargs['on_progress']({'response_text': 'partial answer', 'last_event': 'response.output_text.delta', 'terminal': False})
+            self.fail('Cancelled progress must stop reading')
+        with patch.object(OpenAICompatibleClient, 'generate_text', side_effect=generate):
+            result = run_monitor(settings=self.settings, credentials={'api_key': 'fake'}, store=self.store,
+                lock_path=self.root / 'sample.lock', stop_event=self.service.stop_event)
+        self.assertEqual(result['status'], 'cancelled')
+        samples = self.store.get(result['run_id'])['samples']
+        self.assertEqual([s['status'] for s in samples], ['passed', 'incomplete'])
+        self.assertEqual(samples[1]['response_text'], 'partial answer')
+        self.assertEqual(samples[1]['completion_status'], 'client_cancelled')
+        self.assertTrue(public_run(self.store.get(result['run_id']))['cancelled'])
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(self.service.job['stop_requested'])
+        for action in ('sync', 'models'):
+            self.service.job = {'state': 'running', 'action': action}
+            with self.assertRaises(ValueError):
+                self.service.stop()
+
+    def test_schedule_and_stop_http_routes_do_not_issue_model_requests(self):
+        server = self.http_server()
+        with patch.object(OpenAICompatibleClient, 'generate_text', side_effect=AssertionError('Unexpected model call')):
+            code, body = self.request(server, '/api/schedule', {'enabled': True})
+            self.assertEqual(code, 200)
+            self.assertTrue(json.loads(body)['settings']['schedule']['enabled'])
+            self.assertEqual(self.request(server, '/api/schedule', {'enabled': 'false'})[0], 400)
+            self.assertEqual(self.request(server, '/api/actions', {'action': 'stop'})[0], 400)
+            self.service.job = {'id': 'owned', 'state': 'running', 'action': 'animation'}
+            code, body = self.request(server, '/api/actions', {'action': 'stop'})
+            self.assertEqual(code, 202)
+            self.assertTrue(json.loads(body)['job']['stop_requested'])
+        self.assertEqual(self.store.recent(), [])
+
+    def test_stop_at_completion_keeps_completed_answer_and_skips_next_model(self):
+        calls = []
+        self.service.job = {'id': 'owned', 'state': 'running', 'action': 'run'}
+        def generate(**kwargs):
+            calls.append(1)
+            self.service.stop()
+            kwargs['on_progress']({'response_text': '21', 'last_event': 'response.completed', 'terminal': True})
+            return GPTResponse(text='21', model='m1', response_id='complete', completion_status='completed')
+        with patch.object(OpenAICompatibleClient, 'generate_text', side_effect=generate):
+            result = run_monitor(settings=self.settings, credentials={'api_key': 'fake'}, store=self.store,
+                lock_path=self.root / 'sample.lock', stop_event=self.service.stop_event)
+        samples = self.store.get(result['run_id'])['samples']
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result['status'], 'cancelled')
+        self.assertEqual(samples[0]['status'], 'passed')
+        self.assertEqual(samples[0]['completion_status'], 'completed')
+
+    def test_failure_diagnosis_is_useful_without_returning_raw_error(self):
+        from lab_model_monitor.control import sample_diagnosis
+        self.assertIn('服务链路', sample_diagnosis({'status': 'api_error', 'error': 'fake-model-secret'}, 502))
+        self.assertIn('服务端失败', sample_diagnosis({'status': 'api_error', 'last_event': 'error'}, None))
+        self.assertIn('本地停止', sample_diagnosis({'status': 'incomplete', 'completion_status': 'client_cancelled'}, None))
+        self.assertNotIn('fake-model-secret', sample_diagnosis({'status': 'api_error', 'error': 'fake-model-secret'}, None))
 
     def test_failure_restores_config_credentials_and_task_intent(self):
         previous = config.load_settings()

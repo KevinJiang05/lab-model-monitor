@@ -76,8 +76,11 @@ def make_server(port: int = 8765, *, service: ControlService | None = None) -> T
                     raise ValueError("Expected a JSON object.")
                 if self.path == "/api/settings":
                     self.reply(200, control.save(payload))
+                elif self.path == "/api/schedule":
+                    self.reply(200, control.set_schedule_enabled(payload.get("enabled")))
                 elif self.path == "/api/actions":
-                    self.reply(202, {"success": True, "job": control.start(payload.get("action", ""))})
+                    action = payload.get("action", "")
+                    self.reply(202, {"success": True, "job": control.stop() if action == "stop" else control.start(action)})
                 else:
                     self.reply(404, {"success": False, "error": "not_found"})
             except BusyError:
