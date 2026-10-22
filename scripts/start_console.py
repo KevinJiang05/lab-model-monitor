@@ -12,6 +12,8 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from lab_model_monitor.config import DEFAULT_CONSOLE_PORT
 
 
 def health(url: str) -> bool:
@@ -29,7 +31,7 @@ def health(url: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Open the local model-monitor console.")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=DEFAULT_CONSOLE_PORT)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:

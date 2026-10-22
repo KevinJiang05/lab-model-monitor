@@ -10,12 +10,13 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from .control import BusyError, ControlService, public_run
+from .config import DEFAULT_CONSOLE_PORT
 
 ASSETS = Path(__file__).resolve().parent / "console_assets"
 MAX_REQUEST = 128 * 1024
 
 
-def make_server(port: int = 8765, *, service: ControlService | None = None) -> ThreadingHTTPServer:
+def make_server(port: int = DEFAULT_CONSOLE_PORT, *, service: ControlService | None = None) -> ThreadingHTTPServer:
     control = service or ControlService()
 
     class Handler(BaseHTTPRequestHandler):
@@ -95,7 +96,7 @@ def make_server(port: int = 8765, *, service: ControlService | None = None) -> T
     return server
 
 
-def serve(*, port: int = 8765) -> None:
+def serve(*, port: int = DEFAULT_CONSOLE_PORT) -> None:
     if not 1024 <= port <= 65535:
         raise ValueError("Console port must be between 1024 and 65535.")
     with make_server(port) as server:

@@ -7,6 +7,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / "runtime"
+DEFAULT_CONSOLE_PORT = 18765
 CREDENTIAL_ENVS = {"api_key": "OPENAI_API_KEY", "site_token": "MONITOR_SITE_TOKEN",
                    "feishu_app_id": "FEISHU_APP_ID", "feishu_app_secret": "FEISHU_APP_SECRET",
                    "feishu_chat_id": "FEISHU_CHAT_ID"}

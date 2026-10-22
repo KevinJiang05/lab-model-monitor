@@ -10,7 +10,7 @@ from threading import Event
 from .config import configuration_readiness, credential_status, load_credentials, load_settings
 from .delivery import deliver
 from .monitor import execution_lock, run_monitor
-from .config import STATE
+from .config import DEFAULT_CONSOLE_PORT, STATE
 from .store import RunStore
 
 
@@ -74,7 +74,7 @@ def execute_command(command: str, *, stop_event: Event | None = None) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="实验室模型监测")
     parser.add_argument("command", choices=("run", "run-all", "scheduled-run", "sync", "status", "console", "animation"))
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=DEFAULT_CONSOLE_PORT)
     args = parser.parse_args()
     try:
         if args.command == "console":
