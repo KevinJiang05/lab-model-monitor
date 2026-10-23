@@ -42,6 +42,7 @@ next-env.d.ts
 /.sites-runtime/
 /.agents/
 /.codex/
+/.tmp/
 /outputs/
 /work/
 .dev.vars*
@@ -53,3 +54,12 @@ next-env.d.ts
 __pycache__/
 *.py[cod]
 /.ruff_cache/
+
+# Local credential exports and SQLite evidence outside runtime/.
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*

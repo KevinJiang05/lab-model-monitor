@@ -1,7 +1,8 @@
 [project]
 name = "lab-model-monitor"
 version = "0.1.0"
-description = "Daily relay model candy-puzzle monitor and laboratory dashboard"
+description = "LLM behavior and API availability monitor with a local console and public dashboard"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = []
 

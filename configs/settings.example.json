@@ -7,7 +7,7 @@
     "timeout_seconds": 300
   },
   "schedule": {
-    "enabled": true,
+    "enabled": false,
     "daily_time": "15:00",
     "models": [
       "gpt-6-astra",
@@ -23,5 +23,5 @@
     ]
   },
   "site_url": "",
-  "feishu_enabled": true
+  "feishu_enabled": false
 }
