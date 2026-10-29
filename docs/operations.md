@@ -69,9 +69,30 @@ Responses 模式下的动画和整数题均默认使用流式请求，Chat Compl
 
 Site 的 `/animations` 提供结果卡片、隔离预览、重播、源码和 HTML 下载。预览禁止外部资源与网络请求；下载保留模型原稿。网站沿用现有访问权限。
 
-## 网站构建
+## 网站开发与部署
 
-全新环境须先初始化本地 D1 表；步骤见 [README 的快速开始](../README.md#快速开始)。安装和启动开发服务器不会自动应用数据库迁移。已有本地库不重复执行首次建表命令。
+### 本地预览
+
+需要 **Node.js 22.13+** 和 npm；仅运行 Python 检测与本地控制台无需安装网站依赖。所有命令在仓库根目录执行。
+
+全新克隆首次预览网站时，安装依赖、构建并初始化本地展示表。安装和启动开发服务器不会自动应用数据库迁移；下面的建表命令只用于尚未初始化的本地库，已有本地库时跳过该行。
+
+```powershell
+npm run install:ci
+npm run build
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --config dist/server/wrangler.json --local --persist-to .wrangler/state --file drizzle/0000_right_maria_hill.sql
+npm run dev
+```
+
+打开 `http://127.0.0.1:5173/`。日常启动只需 `npm run dev`。未初始化时网站会显示结果暂时不可用，建表后没有结果才显示空状态。上述命令使用本地 D1，不连接线上数据库，也不调用模型。线上演示数据不随仓库分发。
+
+### 独立部署前提
+
+部署自己的副本需要自己的 Sites 项目与 D1 展示存储，并为该副本配置站点身份、访问权限与数据库迁移。仓库中的 `.openai/hosting.json` 保留作者现有 Site 身份；克隆不会赋予其管理权限，也不能将该身份当作其他使用者的部署目标。
+
+自己的站点还需配置服务端写入凭据 `MONITOR_WRITE_TOKEN`；本地监测端配置对应的 Site 地址与匹配的写入凭据（`MONITOR_SITE_TOKEN` 或控制台中的 Site 凭据）。凭据只进入各自的私有配置，不写入源码。这里说明的是独立部署前提；本地预览步骤不构成已验证的一键线上部署流程。
+
+### 既有站点更新与回退
 
 `.openai/hosting.json` 保留现有 Site 身份。当前域名和访问权限沿用现有发布设置。`npm run dev` 本地预览；网站发布使用 Sites 插件流程，既有 D1 迁移保持不变。
 后端原始数据、凭据、`.venv`、日志、构建缓存均被 Git 忽略，运行时不会依赖量化项目。
